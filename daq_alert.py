@@ -12,16 +12,18 @@ import socket
 import signal
 import os
 import logging
+import time
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-    QPushButton, QFrame, QSizePolicy, QGraphicsDropShadowEffect
+    QPushButton, QFrame, QSizePolicy, QGraphicsDropShadowEffect,
+    QScrollArea, QCheckBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QFont, QColor, QLinearGradient, QPainter, QPalette, QBrush
 
-from config import BROADCAST_PORT, PID_FILE, LOG_FILE
+from config import BROADCAST_PORT, PID_FILE, LOG_FILE, MESSAGE_RATE_LIMIT, MAX_ALERT_WINDOWS
 
 
 logging.basicConfig(
@@ -45,6 +47,22 @@ CLR_DIVIDER     = "#2E2E2E"   # subtle divider
 CLR_BTN_BG      = "#E82020"
 CLR_BTN_HOVER   = "#FF3A3A"
 CLR_BTN_PRESS   = "#B01818"
+
+
+# ── Clickable label ────────────────────────────────────────────────────────────
+class ClickableLabel(QLabel):
+    """A QLabel that emits clicked() when left-clicked."""
+
+    clicked = pyqtSignal()
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 # ── UDP listener thread ────────────────────────────────────────────────────────
@@ -150,14 +168,14 @@ class FieldRow(QWidget):
         label.setFont(QFont("Courier New", 10, QFont.Bold))
         label.setStyleSheet(f"color: {CLR_MUTED}; letter-spacing: 3px; background: transparent;")
 
-        value_lbl = QLabel(value)
-        value_lbl.setFont(QFont("Arial", 17))
-        value_lbl.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
-        value_lbl.setWordWrap(True)
-        value_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.value_label = QLabel(value)
+        self.value_label.setFont(QFont("Arial", 17))
+        self.value_label.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
+        self.value_label.setWordWrap(True)
+        self.value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         layout.addWidget(label)
-        layout.addWidget(value_lbl)
+        layout.addWidget(self.value_label)
 
 
 # ── Alert window ───────────────────────────────────────────────────────────────
@@ -166,6 +184,9 @@ class AlertWindow(QWidget):
 
     def __init__(self, message_data: dict):
         super().__init__()
+        self._error_count = 0
+        self._history: list = []
+        self._history_dialog = None
         self._build_ui(message_data)
 
     def _build_ui(self, data: dict):
@@ -210,11 +231,14 @@ class AlertWindow(QWidget):
         body_layout.addSpacing(8)
 
         # Detail fields
-        body_layout.addWidget(FieldRow("System ID",    system_id))
+        self._system_id_row  = FieldRow("System ID",    system_id)
+        self._timestamp_row  = FieldRow("Timestamp",    timestamp)
+        self._message_row    = FieldRow("Error Message", message)
+        body_layout.addWidget(self._system_id_row)
         body_layout.addWidget(self._divider())
-        body_layout.addWidget(FieldRow("Timestamp",    timestamp))
+        body_layout.addWidget(self._timestamp_row)
         body_layout.addWidget(self._divider())
-        body_layout.addWidget(FieldRow("Error Message", message))
+        body_layout.addWidget(self._message_row)
         body_layout.addStretch(1)
 
         outer.addWidget(body, stretch=1)
@@ -229,6 +253,38 @@ class AlertWindow(QWidget):
         hint = QLabel("Press  Enter / Esc  or click to dismiss")
         hint.setFont(QFont("Arial", 11))
         hint.setStyleSheet(f"color: {CLR_MUTED}; background: transparent;")
+
+        self._pause_cb = QCheckBox("Pause")
+        self._pause_cb.setFont(QFont("Arial", 11))
+        self._pause_cb.setStyleSheet(f"""
+            QCheckBox {{
+                color: {CLR_MUTED};
+                background: transparent;
+                spacing: 6px;
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+                height: 14px;
+                border: 1px solid {CLR_MUTED};
+                border-radius: 3px;
+                background: transparent;
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {CLR_RED};
+                border-color: {CLR_RED};
+            }}
+        """)
+
+        self._history.append(data)
+        self._error_count += 1
+        self._counter_lbl = ClickableLabel(f"Errors Received:  {self._error_count}")
+        self._counter_lbl.setFont(QFont("Arial", 11))
+        self._counter_lbl.setStyleSheet(
+            f"color: {CLR_MUTED}; background: transparent; text-decoration: underline;"
+        )
+        self._counter_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self._counter_lbl.setToolTip("Click to view error history")
+        self._counter_lbl.clicked.connect(self._show_history)
 
         btn = QPushButton("ACKNOWLEDGE")
         btn.setFont(QFont("Arial", 14, QFont.Bold))
@@ -255,7 +311,11 @@ class AlertWindow(QWidget):
 
         btn.clicked.connect(self.close)
         footer_layout.addWidget(hint)
+        footer_layout.addSpacing(24)
+        footer_layout.addWidget(self._pause_cb)
         footer_layout.addStretch()
+        footer_layout.addWidget(self._counter_lbl)
+        footer_layout.addSpacing(32)
         footer_layout.addWidget(btn)
 
         outer.addWidget(footer)
@@ -276,8 +336,123 @@ class AlertWindow(QWidget):
         geo.moveCenter(QDesktopWidget().availableGeometry().center())
         self.move(geo.topLeft())
 
+    @property
+    def is_paused(self) -> bool:
+        return self._pause_cb.isChecked()
+
+    def update_message(self, data: dict):
+        """Replace displayed fields with new message data and increment the counter."""
+        self._history.append(data)
+        self._system_id_row.value_label.setText(data.get("system_id", "UNKNOWN"))
+        self._timestamp_row.value_label.setText(data.get("timestamp", "UNKNOWN"))
+        self._message_row.value_label.setText(data.get("message", "(no message text)"))
+        self._error_count += 1
+        self._counter_lbl.setText(f"Errors Received:  {self._error_count}")
+        # Refresh the open history dialog if it is visible
+        if self._history_dialog is not None:
+            self._history_dialog.close()
+            self._open_history_dialog()
+        self.raise_()
+        self.activateWindow()
+
+    def _show_history(self):
+        if self._history_dialog is not None:
+            self._history_dialog.raise_()
+            self._history_dialog.activateWindow()
+            return
+        self._open_history_dialog()
+
+    def _open_history_dialog(self):
+        self._history_dialog = HistoryDialog(self._history, parent=self)
+        self._history_dialog.destroyed.connect(lambda: setattr(self, "_history_dialog", None))
+        self._history_dialog.show()
+        self._history_dialog.raise_()
+
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Escape, Qt.Key_Return, Qt.Key_Space):
+            self.close()
+
+
+# ── History dialog ─────────────────────────────────────────────────────────────
+class HistoryDialog(QWidget):
+    """Scrollable list of all messages received by one AlertWindow."""
+
+    def __init__(self, history: list, parent=None):
+        super().__init__(parent, Qt.Window)
+        self.setWindowTitle(f"Error History  —  {len(history)} message(s)")
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setMinimumSize(720, 520)
+        self.setStyleSheet(f"background-color: {CLR_BG};")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header bar
+        header = QWidget()
+        header.setFixedHeight(64)
+        header.setStyleSheet(f"background-color: {CLR_PANEL}; border-bottom: 1px solid {CLR_DIVIDER};")
+        hdr_layout = QHBoxLayout(header)
+        hdr_layout.setContentsMargins(32, 0, 32, 0)
+        title_lbl = QLabel(f"Error History  —  {len(history)} message(s)")
+        title_lbl.setFont(QFont("Arial", 15, QFont.Bold))
+        title_lbl.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
+        hdr_layout.addWidget(title_lbl)
+        layout.addWidget(header)
+
+        # Scrollable entries (newest first)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {CLR_BG}; }}")
+
+        container = QWidget()
+        container.setStyleSheet(f"background: {CLR_BG};")
+        c_layout = QVBoxLayout(container)
+        c_layout.setContentsMargins(32, 24, 32, 24)
+        c_layout.setSpacing(12)
+
+        for idx, msg in enumerate(reversed(history), 1):
+            c_layout.addWidget(self._make_entry(len(history) - idx + 1, msg))
+
+        c_layout.addStretch()
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+
+    def _make_entry(self, index: int, data: dict) -> QWidget:
+        entry = QWidget()
+        entry.setStyleSheet(
+            f"background: {CLR_PANEL}; border-radius: 4px; border: 1px solid {CLR_DIVIDER};"
+        )
+        e_layout = QVBoxLayout(entry)
+        e_layout.setContentsMargins(20, 14, 20, 14)
+        e_layout.setSpacing(8)
+
+        num_lbl = QLabel(f"#{index}")
+        num_lbl.setFont(QFont("Courier New", 10, QFont.Bold))
+        num_lbl.setStyleSheet(f"color: {CLR_RED}; background: transparent; letter-spacing: 2px;")
+        e_layout.addWidget(num_lbl)
+
+        for field, key in (("System ID", "system_id"), ("Timestamp", "timestamp"), ("Message", "message")):
+            row = QHBoxLayout()
+            row.setSpacing(12)
+            lbl = QLabel(field.upper())
+            lbl.setFont(QFont("Courier New", 9, QFont.Bold))
+            lbl.setStyleSheet(f"color: {CLR_MUTED}; background: transparent; letter-spacing: 2px;")
+            lbl.setFixedWidth(110)
+            lbl.setAlignment(Qt.AlignTop)
+            val = QLabel(data.get(key, "UNKNOWN"))
+            val.setFont(QFont("Arial", 13))
+            val.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
+            val.setWordWrap(True)
+            row.addWidget(lbl)
+            row.addWidget(val, stretch=1)
+            e_layout.addLayout(row)
+
+        return entry
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Escape, Qt.Key_Return):
             self.close()
 
 
@@ -290,6 +465,7 @@ class DAQAlertApp:
         self.app.setQuitOnLastWindowClosed(False)
 
         self._windows: list = []   # keep references so windows aren't GC'd
+        self._last_accepted_time: float = 0.0
 
         self.listener = UDPListenerThread(port=BROADCAST_PORT)
         self.listener.message_received.connect(self._show_alert)
@@ -312,7 +488,30 @@ class DAQAlertApp:
             fh.write(str(os.getpid()))
 
     def _show_alert(self, message_data: dict):
+        # ── Throttle ──────────────────────────────────────────────────────────
+        now = time.monotonic()
+        min_interval = 1.0 / MESSAGE_RATE_LIMIT
+        if now - self._last_accepted_time < min_interval:
+            log.info(
+                "Throttling message (rate limit %.1f msg/s): %s",
+                MESSAGE_RATE_LIMIT, message_data,
+            )
+            return
+        self._last_accepted_time = now
+
         log.info("Displaying alert: %s", message_data)
+
+        # ── Window cap ────────────────────────────────────────────────────────
+        if len(self._windows) >= MAX_ALERT_WINDOWS:
+            # Find the most recently opened window that is not paused
+            for window in reversed(self._windows):
+                if not window.is_paused:
+                    window.update_message(message_data)
+                    log.info("Max windows reached; updated existing window")
+                    return
+            log.info("All windows paused; dropping message")
+            return
+
         window = AlertWindow(message_data)
         self._windows.append(window)
         # Remove from list when the window is closed so memory isn't leaked
