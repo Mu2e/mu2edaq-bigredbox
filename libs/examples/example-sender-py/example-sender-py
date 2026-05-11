@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""
+example-sender-py — send a Mu2e DAQ alert using the Python daq_alert library.
+"""
+
+import argparse
+import sys
+
+try:
+    from daq_alert import send_alert, DEFAULT_PORT, DEFAULT_BROADCAST_IP
+except ImportError:
+    sys.exit(
+        "error: daq_alert package not found.\n"
+        "Install it with:  pip install libs/python/\n"
+        "or via CMake:     cmake --install <build-dir>"
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="example-sender-py",
+        description="Send a Mu2e DAQ alert via UDP broadcast using the Python library.",
+    )
+    parser.add_argument(
+        "-s", "--system-id",
+        default="DAQ-NODE-01",
+        metavar="ID",
+        help="System identifier (default: DAQ-NODE-01)",
+    )
+    parser.add_argument(
+        "-m", "--message",
+        default="Test alert from example-sender-py",
+        metavar="TEXT",
+        help="Alert message text (default: Test alert from example-sender-py)",
+    )
+    parser.add_argument(
+        "-i", "--ip",
+        default=DEFAULT_BROADCAST_IP,
+        metavar="ADDRESS",
+        help=f"Broadcast IP address (default: {DEFAULT_BROADCAST_IP})",
+    )
+    parser.add_argument(
+        "-p", "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        metavar="NUM",
+        help=f"UDP port (default: {DEFAULT_PORT})",
+    )
+
+    args = parser.parse_args()
+
+    if not (1 <= args.port <= 65535):
+        parser.error(f"port must be between 1 and 65535, got {args.port}")
+
+    print(f"Sending alert to {args.ip}:{args.port}")
+    print(f"  system_id : {args.system_id}")
+    print(f"  message   : {args.message}")
+
+    send_alert(args.system_id, args.message, args.ip, args.port)
+    print("Alert sent.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,86 @@
+.TH EXAMPLE\-SENDER\-PY 1 "May 2026" "mu2e\-daq\-alert 1.0.0" "User Commands"
+.SH NAME
+example\-sender\-py \- send a Mu2e DAQ alert using the Python library
+.SH SYNOPSIS
+.B example\-sender\-py
+[\fB\-s\fR \fIID\fR]
+[\fB\-m\fR \fITEXT\fR]
+[\fB\-i\fR \fIADDRESS\fR]
+[\fB\-p\fR \fINUM\fR]
+[\fB\-h\fR]
+.SH DESCRIPTION
+.B example\-sender\-py
+constructs a JSON alert payload and broadcasts it as a single UDP datagram.
+It is a minimal demonstration of the
+.B daq_alert
+Python package, specifically the
+.B send_alert()
+function.
+.PP
+The payload format is:
+.PP
+.RS 4
+.nf
+{"system_id":"...","timestamp":"<ISO\-8601>","message":"..."}
+.fi
+.RE
+.PP
+The timestamp is generated automatically at the time of the call.
+.PP
+The script requires the
+.B daq_alert
+package to be importable.  Install it with
+.B pip install libs/python/
+or via the CMake install target before running.
+.SH OPTIONS
+.TP
+.BR \-s ", " \-\-system\-id " " \fIID\fR
+Identifier of the sending system.
+.br
+Default: \fBDAQ\-NODE\-01\fR
+.TP
+.BR \-m ", " \-\-message " " \fITEXT\fR
+Human\-readable alert message.
+.br
+Default: \fBTest alert from example\-sender\-py\fR
+.TP
+.BR \-i ", " \-\-ip " " \fIADDRESS\fR
+UDP broadcast destination address.
+.br
+Default: \fB255.255.255.255\fR
+.TP
+.BR \-p ", " \-\-port " " \fINUM\fR
+UDP destination port (1\(en65535).
+.br
+Default: \fB37020\fR
+.TP
+.BR \-h ", " \-\-help
+Print a usage summary and exit.
+.SH EXAMPLES
+Send an alert with default parameters:
+.PP
+.RS 4
+.nf
+example\-sender\-py
+.fi
+.RE
+.PP
+Send an alert to a specific subnet with a custom system ID and message:
+.PP
+.RS 4
+.nf
+example\-sender\-py \-\-system\-id DAQ\-NODE\-03 \e
+    \-\-message "Readout buffer overflow" \e
+    \-\-ip 192.168.1.255
+.fi
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Alert sent successfully.
+.TP
+.B 1
+Invalid argument, missing dependency, or send failure.
+.SH SEE ALSO
+.BR example\-sender\-c (1),
+.BR example\-sender\-cpp (1)
