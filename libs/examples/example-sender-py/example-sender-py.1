@@ -29,9 +29,10 @@ The timestamp is generated automatically at the time of the call.
 .PP
 The script requires the
 .B daq_alert
-package to be importable.  Install it with
-.B pip install libs/python/
-or via the CMake install target before running.
+Python package to be importable.
+See the
+.B INSTALLATION
+section below.
 .SH OPTIONS
 .TP
 .BR \-s ", " \-\-system\-id " " \fIID\fR
@@ -81,6 +82,43 @@ Alert sent successfully.
 .TP
 .B 1
 Invalid argument, missing dependency, or send failure.
+.SH INSTALLATION
+Install the required
+.B daq_alert
+package into your active virtual environment using pip:
+.PP
+.RS 4
+.nf
+pip install libs/python/
+.fi
+.RE
+.PP
+Alternatively, point CMake at your virtual environment's site\-packages and
+install via the CMake install target:
+.PP
+.RS 4
+.nf
+cmake \-B build \e
+    \-DDAQ_ALERT_PYTHON_INSTALL_DIR="$(python3 \-c \e
+        'import sysconfig; print(sysconfig.get_path(\"purelib\"))')"
+cmake \-\-install build
+.fi
+.RE
+.SH BUILDING
+Build and install from the
+.I libs/
+directory of the repository:
+.PP
+.RS 4
+.nf
+cmake \-B build \-DCMAKE_INSTALL_PREFIX=./install
+cmake \-\-build build
+cmake \-\-install build
+.fi
+.RE
+.PP
+The installed script is placed in
+.IR <prefix>/bin/example\-sender\-py .
 .SH SEE ALSO
 .BR example\-sender\-c (1),
 .BR example\-sender\-cpp (1)

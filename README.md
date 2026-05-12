@@ -12,7 +12,7 @@ A daemon runs the main application anywhere within the DAQ network (typically on
 
 If a message is broadcast in this manner (and here it can be from any place in the DAQ and the sender doesn't need to know anything about the reciever) it is picked up by the application, and a BIG RED BOX appears (with some additional info).
 
-This is written using QT5 so it's portable, and has a python sender application included.  (a C++ one will be along shortly)
+This is written using QT5 so it's portable. C, C++, and Python sender libraries are provided under `libs/` along with three example programs (`example-sender-c`, `example-sender-cpp`, `example-sender-py`).
 
 ## Features
 
@@ -34,9 +34,11 @@ This does work with ssh forwarded X11 connections
 
 ## Install
 
-Python virtual environment should be setup and then you can just install dependancies.
+Create and activate a Python virtual environment, then install dependencies:
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt   # PyQt5>=5.15
 ```
 
@@ -93,6 +95,9 @@ UDPListenerThread   ← background QThread, emits message_received signal
 | `config.py` | Shared constants (`BROADCAST_PORT`, `MESSAGE_RATE_LIMIT`, `MAX_ALERT_WINDOWS`, log/PID paths) |
 | `start_daq_alert.sh` | Start the daemon in the background |
 | `stop_daq_alert.sh` | Stop the running daemon |
+| `libs/` | C, C++, and Python alert-sender libraries with CMake build system |
+| `libs/examples/` | Example sender programs for each library interface |
+| `BUILD.md` | Full build and installation instructions |
 
 ## Configuration
 

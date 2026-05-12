@@ -1,3 +1,9 @@
+# CMake build and install trees
+libs/build/
+libs/install/
+libs/_build/
+libs/_install/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

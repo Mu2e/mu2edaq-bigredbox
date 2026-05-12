@@ -73,6 +73,21 @@ Alert sent successfully.
 .TP
 .B 1
 Invalid argument or send failure.
+.SH BUILDING
+Build and install from the
+.I libs/
+directory of the repository:
+.PP
+.RS 4
+.nf
+cmake \-B build \-DCMAKE_INSTALL_PREFIX=./install
+cmake \-\-build build
+cmake \-\-install build
+.fi
+.RE
+.PP
+The installed binary is placed in
+.IR <prefix>/bin/example\-sender\-c .
 .SH SEE ALSO
 .BR example\-sender\-cpp (1),
 .BR example\-sender\-py (1)

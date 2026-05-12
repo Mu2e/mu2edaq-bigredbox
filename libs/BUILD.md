@@ -25,14 +25,23 @@ Installed artifacts:
 
 ```
 install/
+├── bin/
+│   ├── example-sender-c
+│   ├── example-sender-cpp
+│   └── example-sender-py
 ├── include/
-│   ├── daq_alert.h       # C header
-│   └── daq_alert.hpp     # C++ header
+│   ├── daq_alert.h          # C header
+│   └── daq_alert.hpp        # C++ header
 ├── lib/
-│   ├── libdaq_alert.a    # C static library
-│   └── libdaq_alert_cpp.a  # C++ static library
-└── python/
-    └── daq_alert/        # Python package
+│   ├── libdaq_alert.a       # C static library
+│   └── libdaq_alert_cpp.a   # C++ static library
+├── man/
+│   └── man1/
+│       ├── example-sender-c.1
+│       ├── example-sender-cpp.1
+│       └── example-sender-py.1
+└── python/                  # only when DAQ_ALERT_PYTHON_INSTALL_DIR is set
+    └── daq_alert/
         ├── __init__.py
         └── _sender.py
 ```
@@ -44,6 +53,7 @@ install/
 | `CMAKE_INSTALL_PREFIX` | `/usr/local` | Root installation directory |
 | `CMAKE_BUILD_TYPE` | `Release` | `Release`, `Debug`, `RelWithDebInfo` |
 | `DAQ_ALERT_PYTHON_INSTALL_DIR` | system site-packages | Override Python install path |
+| `BUILD_SHARED_LIBS` | `OFF` | Build shared libraries instead of static |
 
 ## C library
 
@@ -124,6 +134,8 @@ cmake --install build
 ```
 
 ### Installation via pip (standalone)
+
+Activate your virtual environment first, then install from the repo root:
 
 ```bash
 pip install libs/python/

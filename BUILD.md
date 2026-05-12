@@ -71,17 +71,20 @@ install/
 │   ├── example-sender-cpp
 │   └── example-sender-py
 ├── include/
-│   ├── daq_alert.h       # C header
-│   └── daq_alert.hpp     # C++ header
+│   ├── daq_alert.h          # C header
+│   └── daq_alert.hpp        # C++ header
 ├── lib/
-│   ├── libdaq_alert.a
-│   └── libdaq_alert_cpp.a
-├── man/man1/
-│   ├── example-sender-c.1
-│   ├── example-sender-cpp.1
-│   └── example-sender-py.1
-└── python/
+│   ├── libdaq_alert.a       # C static library
+│   └── libdaq_alert_cpp.a   # C++ static library
+├── man/
+│   └── man1/
+│       ├── example-sender-c.1
+│       ├── example-sender-cpp.1
+│       └── example-sender-py.1
+└── python/                  # only when DAQ_ALERT_PYTHON_INSTALL_DIR is set
     └── daq_alert/
+        ├── __init__.py
+        └── _sender.py
 ```
 
 ### CMake options
@@ -127,13 +130,16 @@ Man pages are installed to `<prefix>/man/man1/` and can be read with:
 
 ```bash
 man ./install/man/man1/example-sender-c.1
+man ./install/man/man1/example-sender-cpp.1
+man ./install/man/man1/example-sender-py.1
 ```
 
 ---
 
 ## Python library — standalone install
 
-The Python library can also be installed independently of CMake via pip:
+The Python library can be installed independently of CMake via pip.
+Activate your virtual environment first, then:
 
 ```bash
 pip install libs/python/
