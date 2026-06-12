@@ -471,6 +471,18 @@ class DAQAlertApp:
         self.listener.message_received.connect(self._show_alert)
         self.listener.start()
 
+        # Announce ourselves via mu2edaq-discovery once the listener is up.
+        # Optional dependency: the app runs normally without it.
+        self.responder = None
+        try:
+            from mu2edaq_discovery import Responder
+            self.responder = Responder(
+                name="Big Red Box Alerts", app="bigredbox",
+                port=BROADCAST_PORT, scheme="udp")
+            self.responder.start()
+        except ImportError:
+            log.info("mu2edaq-discovery not installed; discovery disabled")
+
         # Allow Python signal handlers to fire inside the Qt event loop
         self._signal_timer = QTimer()
         self._signal_timer.setInterval(500)
@@ -525,6 +537,8 @@ class DAQAlertApp:
         self._shutdown()
 
     def _shutdown(self):
+        if self.responder is not None:
+            self.responder.stop()
         self.listener.stop()
         self._remove_pid()
         self.app.quit()
