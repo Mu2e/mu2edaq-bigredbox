@@ -1,1 +1,2 @@
 PyQt5>=5.15
+mu2edaq-discovery @ git+https://github.com/Mu2e/mu2edaq-discovery.git

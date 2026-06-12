@@ -2,6 +2,8 @@
 Shared configuration for the DAQ Alert system.
 """
 
+import os
+
 # PID file location for daemon management
 PID_FILE = "/tmp/daq_alert.pid"
 
@@ -18,6 +20,7 @@ MESSAGE_RATE_LIMIT = 10.0
 # opened (and unpaused) window.
 MAX_ALERT_WINDOWS = 2
 
-# UDP broadcast port for alert messages
-BROADCAST_PORT = 37020
+# UDP broadcast port for alert messages.
+# CRS_PORT_UDP is exported by the control room's crs-app launcher.
+BROADCAST_PORT = int(os.environ.get("CRS_PORT_UDP", 37020))
 
