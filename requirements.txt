@@ -1,1 +1,3 @@
 PyQt5>=5.15
+# Mu2e DAQ service discovery (stdlib-only; from the sibling submodule).
+mu2edaq-discovery
