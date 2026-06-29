@@ -471,6 +471,19 @@ class DAQAlertApp:
         self.listener.message_received.connect(self._show_alert)
         self.listener.start()
 
+        # Mu2e DAQ service discovery: advertise the UDP alert port so the app
+        # appears in mu2edaq-discover scans and the control room browser.
+        # Best-effort so a missing package never blocks startup.
+        self._responder = None
+        try:
+            from mu2edaq_discovery import Responder
+            self._responder = Responder(name="Big Red Box Alerts",
+                                        app="bigredbox",
+                                        port=BROADCAST_PORT, scheme="udp")
+            self._responder.start()
+        except Exception as exc:
+            log.warning("Discovery responder not started: %s", exc)
+
         # Allow Python signal handlers to fire inside the Qt event loop
         self._signal_timer = QTimer()
         self._signal_timer.setInterval(500)
@@ -526,6 +539,8 @@ class DAQAlertApp:
 
     def _shutdown(self):
         self.listener.stop()
+        if self._responder is not None:
+            self._responder.stop()
         self._remove_pid()
         self.app.quit()
 
