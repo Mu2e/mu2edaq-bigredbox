@@ -1,6 +1,6 @@
 # Runtime dependencies. These mirror [project.dependencies] in pyproject.toml;
 # the supported install is `pip install .` (or `pip install -e .` for dev).
-PyQt5>=5.15
+PyQt6>=6.4
 # Mu2e DAQ service discovery (stdlib-only; from the sibling submodule).
 # Optional -- also available as the `discovery` extra.
 mu2edaq-discovery

@@ -4,11 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`mu2edaq-bigredbox` is a PyQt5-based GUI daemon for the Mu2e experiment's Data Acquisition (DAQ) system. It displays prominent alert windows when fatal/critical errors are broadcast over the network.
+`mu2edaq-bigredbox` is a PyQt6-based GUI daemon for the Mu2e experiment's Data Acquisition (DAQ) system. It displays prominent alert windows when fatal/critical errors are broadcast over the network.
 
 ## Compatibility
 
-All code should be compatible with python 3.9
+All code should be compatible with python 3.9.
+
+The GUI uses **Qt6 via PyQt6** (migrated from PyQt5). Do not reintroduce PyQt5
+imports. PyQt6 requires fully scoped enums — `Qt.AlignmentFlag.AlignLeft`, not
+`Qt.AlignLeft`; `QFont.Weight.Bold`, not `QFont.Bold` — and these fail only at
+widget-construction time, so add coverage in `tests/test_gui.py` for new
+widgets. `QDesktopWidget` no longer exists; use `widget.screen()`. Use
+`app.exec()`, not `app.exec_()`. See the migration table in BUILD.md.
+
+Note that PyQt6 6.10+ requires Python 3.10+, so a 3.9 environment resolves to
+PyQt6 6.9.1; keep to APIs available in Qt 6.4.
 
 ## Running the Application
 
@@ -37,7 +47,8 @@ source venv/bin/activate
 pip install -e '.[dev]'
 ```
 
-Requires a `DISPLAY` environment variable set (X11/GUI environment).
+Requires a `DISPLAY` environment variable set (X11/GUI environment) to run the
+app. The test suite does not — it renders offscreen.
 
 ## Architecture
 
@@ -59,11 +70,22 @@ Requires a `DISPLAY` environment variable set (X11/GUI environment).
 - `src/mu2edaq_bigredbox/config.py` — Shared constants (`BROADCAST_PORT=37020`, log/PID file paths)
 - `daq_alert.py`, `demo_sender.py` (repo root) — compatibility shims that import from the package
 - `man/man1/` — man pages for `mu2edaq-bigredbox` and `mu2edaq-bigredbox-send`
+- `tests/conftest.py` — forces `QT_QPA_PLATFORM=offscreen` before Qt is imported
 
 **Entry points:** `mu2edaq-bigredbox` (listener, also `python -m mu2edaq_bigredbox`)
 and `mu2edaq-bigredbox-send` (test sender).
 
 ## Tests
 
-`pytest` runs the packaging/protocol smoke tests in `tests/`. The GUI has no
-automated coverage — use `mu2edaq-bigredbox-send` for manual functional testing.
+```bash
+pytest                          # headless; no DISPLAY needed
+QT_QPA_PLATFORM=xcb pytest      # to watch the windows (cocoa on macOS)
+```
+
+- `tests/test_packaging.py` — package metadata, `CRS_PORT_UDP` override, UDP
+  payload format, console-script registration
+- `tests/test_gui.py` — PyQt6 widget construction, alert update/counter, pause
+  checkbox, history dialog, key handling, listener thread lifecycle
+
+`pyproject.toml` pins `qt_api = "pyqt6"` for pytest-qt. End-to-end behaviour
+still warrants a manual check with `mu2edaq-bigredbox-send`.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 DAQ Alert Listener - Listens for broadcast critical error messages and
-displays a prominent alert window via PyQt5.
+displays a prominent alert window via PyQt6.
 
 Compatible with Python 3.9+
 """
@@ -15,13 +15,13 @@ import logging
 import time
 from datetime import datetime
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QPushButton, QFrame, QSizePolicy, QGraphicsDropShadowEffect,
     QScrollArea, QCheckBox
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QFont, QColor, QLinearGradient, QPainter, QPalette, QBrush
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QColor, QLinearGradient, QPainter, QBrush
 
 from .config import BROADCAST_PORT, PID_FILE, LOG_FILE, MESSAGE_RATE_LIMIT, MAX_ALERT_WINDOWS
 
@@ -57,10 +57,10 @@ class ClickableLabel(QLabel):
 
     def __init__(self, text: str = "", parent=None):
         super().__init__(text, parent)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
         super().mousePressEvent(event)
 
@@ -119,7 +119,7 @@ class RedBanner(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(110)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(40, 0, 40, 0)
@@ -127,23 +127,23 @@ class RedBanner(QWidget):
 
         icon = QLabel("⬛")          # placeholder; replaced by paintEvent gradient
         icon_lbl = QLabel("⚠")
-        icon_lbl.setFont(QFont("Arial", 36, QFont.Bold))
+        icon_lbl.setFont(QFont("Arial", 36, QFont.Weight.Bold))
         icon_lbl.setStyleSheet(f"color: {CLR_AMBER}; background: transparent;")
-        icon_lbl.setAlignment(Qt.AlignVCenter)
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         title = QLabel("CRITICAL DAQ ERROR")
-        title.setFont(QFont("Arial", 34, QFont.Bold))
+        title.setFont(QFont("Arial", 34, QFont.Weight.Bold))
         title.setStyleSheet(
             f"color: {CLR_TEXT}; background: transparent; letter-spacing: 6px;"
         )
-        title.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
         layout.addWidget(icon_lbl)
         layout.addWidget(title, stretch=1)
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         gradient = QLinearGradient(0, 0, self.width(), 0)
         gradient.setColorAt(0.0, QColor(CLR_RED))
         gradient.setColorAt(0.6, QColor(CLR_RED_DARK))
@@ -165,14 +165,14 @@ class FieldRow(QWidget):
         layout.setSpacing(4)
 
         label = QLabel(field.upper())
-        label.setFont(QFont("Courier New", 10, QFont.Bold))
+        label.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
         label.setStyleSheet(f"color: {CLR_MUTED}; letter-spacing: 3px; background: transparent;")
 
         self.value_label = QLabel(value)
         self.value_label.setFont(QFont("Arial", 17))
         self.value_label.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
         self.value_label.setWordWrap(True)
-        self.value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.value_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         layout.addWidget(label)
         layout.addWidget(self.value_label)
@@ -195,8 +195,8 @@ class AlertWindow(QWidget):
         message   = data.get("message",   "(no message text)")
 
         self.setWindowTitle("CRITICAL DAQ ERROR")
-        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Window)
-        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Window)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setMinimumSize(860, 530)
         self.setStyleSheet(f"background-color: {CLR_BG};")
 
@@ -282,14 +282,14 @@ class AlertWindow(QWidget):
         self._counter_lbl.setStyleSheet(
             f"color: {CLR_MUTED}; background: transparent; text-decoration: underline;"
         )
-        self._counter_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self._counter_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
         self._counter_lbl.setToolTip("Click to view error history")
         self._counter_lbl.clicked.connect(self._show_history)
 
         btn = QPushButton("ACKNOWLEDGE")
-        btn.setFont(QFont("Arial", 14, QFont.Bold))
+        btn.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         btn.setFixedSize(200, 46)
-        btn.setCursor(Qt.PointingHandCursor)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {CLR_BTN_BG};
@@ -325,15 +325,19 @@ class AlertWindow(QWidget):
     @staticmethod
     def _divider() -> QFrame:
         d = QFrame()
-        d.setFrameShape(QFrame.HLine)
+        d.setFrameShape(QFrame.Shape.HLine)
         d.setFixedHeight(1)
         d.setStyleSheet(f"background: {CLR_DIVIDER}; border: none;")
         return d
 
     def _center_on_screen(self):
-        from PyQt5.QtWidgets import QDesktopWidget
+        # QDesktopWidget was removed in Qt6; use the screen this window is on,
+        # falling back to the primary screen before the window is shown.
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
         geo = self.frameGeometry()
-        geo.moveCenter(QDesktopWidget().availableGeometry().center())
+        geo.moveCenter(screen.availableGeometry().center())
         self.move(geo.topLeft())
 
     @property
@@ -369,7 +373,7 @@ class AlertWindow(QWidget):
         self._history_dialog.raise_()
 
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Escape, Qt.Key_Return, Qt.Key_Space):
+        if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Space):
             self.close()
 
 
@@ -378,10 +382,10 @@ class HistoryDialog(QWidget):
     """Scrollable list of all messages received by one AlertWindow."""
 
     def __init__(self, history: list, parent=None):
-        super().__init__(parent, Qt.Window)
+        super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle(f"Error History  —  {len(history)} message(s)")
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setMinimumSize(720, 520)
         self.setStyleSheet(f"background-color: {CLR_BG};")
 
@@ -396,7 +400,7 @@ class HistoryDialog(QWidget):
         hdr_layout = QHBoxLayout(header)
         hdr_layout.setContentsMargins(32, 0, 32, 0)
         title_lbl = QLabel(f"Error History  —  {len(history)} message(s)")
-        title_lbl.setFont(QFont("Arial", 15, QFont.Bold))
+        title_lbl.setFont(QFont("Arial", 15, QFont.Weight.Bold))
         title_lbl.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
         hdr_layout.addWidget(title_lbl)
         layout.addWidget(header)
@@ -429,7 +433,7 @@ class HistoryDialog(QWidget):
         e_layout.setSpacing(8)
 
         num_lbl = QLabel(f"#{index}")
-        num_lbl.setFont(QFont("Courier New", 10, QFont.Bold))
+        num_lbl.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
         num_lbl.setStyleSheet(f"color: {CLR_RED}; background: transparent; letter-spacing: 2px;")
         e_layout.addWidget(num_lbl)
 
@@ -437,10 +441,10 @@ class HistoryDialog(QWidget):
             row = QHBoxLayout()
             row.setSpacing(12)
             lbl = QLabel(field.upper())
-            lbl.setFont(QFont("Courier New", 9, QFont.Bold))
+            lbl.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
             lbl.setStyleSheet(f"color: {CLR_MUTED}; background: transparent; letter-spacing: 2px;")
             lbl.setFixedWidth(110)
-            lbl.setAlignment(Qt.AlignTop)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignTop)
             val = QLabel(data.get(key, "UNKNOWN"))
             val.setFont(QFont("Arial", 13))
             val.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
@@ -452,7 +456,7 @@ class HistoryDialog(QWidget):
         return entry
 
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Escape, Qt.Key_Return):
+        if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Return):
             self.close()
 
 
@@ -551,7 +555,7 @@ class DAQAlertApp:
             pass
 
     def run(self) -> int:
-        exit_code = self.app.exec_()
+        exit_code = self.app.exec()
         self._shutdown()
         return exit_code
 

@@ -12,7 +12,7 @@ A daemon runs the main application anywhere within the DAQ network (typically on
 
 If a message is broadcast in this manner (and here it can be from any place in the DAQ and the sender doesn't need to know anything about the reciever) it is picked up by the application, and a BIG RED BOX appears (with some additional info).
 
-This is written using QT5 so it's portable. C, C++, and Python sender libraries are provided under `libs/` along with three example programs (`example-sender-c`, `example-sender-cpp`, `example-sender-py`).
+This is written using Qt6 (PyQt6) so it's portable. C, C++, and Python sender libraries are provided under `libs/` along with three example programs (`example-sender-c`, `example-sender-cpp`, `example-sender-py`).
 
 ## Features
 
@@ -28,9 +28,17 @@ This is written using QT5 so it's portable. C, C++, and Python sender libraries 
 ## Requirements
 
 - Python 3.9+
+- PyQt6 (Qt 6.4 or later) — installed automatically as a dependency
 - A display environment (X11 / `DISPLAY` variable set)
 
-This does work with ssh forwarded X11 connections
+This does work with ssh forwarded X11 connections.
+
+> **Qt6 note.** The GUI was migrated from PyQt5 to PyQt6; there is no longer any
+> Qt5 dependency. PyQt6 6.10 and later require Python 3.10+, so on Python 3.9
+> pip resolves to PyQt6 6.9.1 (verified on manylinux) — that is fine, since the
+> code uses no API introduced after 6.4. On Linux, Qt6 needs the
+> usual X11 client libraries (`libxkbcommon-x11`, `libEGL`, `xcb-cursor`); on
+> RHEL/AlmaLinux install `libxkbcommon-x11 xcb-util-cursor mesa-libEGL`.
 
 ## Install
 
@@ -106,7 +114,7 @@ UDPListenerThread   ← background QThread, emits message_received signal
   DAQAlertApp       ← throttles & caps windows, owns the Qt event loop
         │
         ▼
-  AlertWindow       ← always-on-top PyQt5 window, tracks per-window history
+  AlertWindow       ← always-on-top PyQt6 window, tracks per-window history
 ```
 
 **Key files:**
@@ -119,7 +127,8 @@ UDPListenerThread   ← background QThread, emits message_received signal
 | `src/mu2edaq_bigredbox/config.py` | Shared constants (`BROADCAST_PORT`, `MESSAGE_RATE_LIMIT`, `MAX_ALERT_WINDOWS`, log/PID paths) |
 | `daq_alert.py`, `demo_sender.py` | Root-level compatibility shims for running from a checkout |
 | `man/man1/` | Man pages for both console scripts |
-| `tests/` | pytest smoke tests for the package build and the UDP payload |
+| `tests/test_packaging.py` | pytest checks for the package build and the UDP payload |
+| `tests/test_gui.py` | Headless PyQt6 widget tests (offscreen platform) |
 | `bootstrap.sh` | Create `venv/` and install the package |
 | `start_daq_alert.sh` | Start the daemon in the background |
 | `stop_daq_alert.sh` | Stop the running daemon |
@@ -142,3 +151,20 @@ Edit `src/mu2edaq_bigredbox/config.py` to change defaults:
 ## Dismissing an alert
 
 Click **ACKNOWLEDGE**, or press `Enter`, `Esc`, or `Space`.
+
+## Tests
+
+```bash
+./bootstrap.sh --dev
+source venv/bin/activate
+pytest
+```
+
+The suite runs headless — `tests/conftest.py` sets `QT_QPA_PLATFORM=offscreen`,
+so no `DISPLAY` is needed. `tests/test_gui.py` constructs the real PyQt6
+widgets, which is what catches the scoped-enum errors the Qt5→Qt6 port can
+introduce. To watch the windows while testing, override the platform:
+
+```bash
+QT_QPA_PLATFORM=xcb pytest        # cocoa on macOS, windows on Win32
+```

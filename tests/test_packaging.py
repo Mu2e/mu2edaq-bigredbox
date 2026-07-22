@@ -1,8 +1,7 @@
 """Smoke tests for the mu2edaq-bigredbox package build.
 
 These deliberately avoid importing mu2edaq_bigredbox.daq_alert, which pulls in
-PyQt5 and needs a display; the GUI is exercised manually with
-mu2edaq-bigredbox-send.
+PyQt6; the widgets themselves are covered headless by test_gui.py.
 """
 
 import json

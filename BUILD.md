@@ -4,7 +4,7 @@ This repository contains two independently buildable components:
 
 | Component | Language | Build system |
 |---|---|---|
-| DAQ alert daemon (`mu2edaq-bigredbox`) | Python + PyQt5 | setuptools / `pyproject.toml` |
+| DAQ alert daemon (`mu2edaq-bigredbox`) | Python + PyQt6 | setuptools / `pyproject.toml` |
 | Alert-sender libraries and examples | C, C++, Python | CMake |
 
 ---
@@ -14,7 +14,22 @@ This repository contains two independently buildable components:
 ### Requirements
 
 - Python 3.9 or later
+- PyQt6 (Qt 6.4+), pulled in automatically by the install
 - A running X11/Wayland display (`DISPLAY` must be set)
+
+The GUI uses **Qt6 via PyQt6**; there is no remaining Qt5 dependency. PyQt6
+6.10 and later require Python 3.10+, so a Python 3.9 environment resolves to
+PyQt6 6.9.1. That is supported — the code uses no API newer than Qt 6.4. If an
+old PyQt5 is still present in the environment from before the migration, remove
+it to avoid two Qt runtimes being loaded:
+
+```bash
+pip uninstall PyQt5 PyQt5-Qt5 PyQt5-sip
+```
+
+On Linux, Qt6 needs the X11 client libraries: on RHEL/AlmaLinux install
+`libxkbcommon-x11`, `xcb-util-cursor` and `mesa-libEGL`; on Debian/Ubuntu
+`libxkbcommon-x11-0`, `libxcb-cursor0` and `libegl1`.
 
 ### Setup
 
@@ -48,6 +63,9 @@ src/mu2edaq_bigredbox/
 └── demo_sender.py
 man/man1/*.1
 tests/
+├── conftest.py        # forces QT_QPA_PLATFORM=offscreen
+├── test_packaging.py
+└── test_gui.py        # headless PyQt6 widget tests
 ```
 
 ### Building distributions
@@ -95,9 +113,49 @@ pip install -e '.[dev]'
 pytest
 ```
 
-`tests/test_packaging.py` covers the package metadata, `CRS_PORT_UDP` port
-override, the UDP payload format, and console-script registration. The GUI
-itself is still verified manually with `mu2edaq-bigredbox-send`.
+| File | Covers |
+|---|---|
+| `tests/test_packaging.py` | Package metadata, `CRS_PORT_UDP` override, UDP payload format, console-script registration |
+| `tests/test_gui.py` | PyQt6 widget construction, alert update/counter, pause checkbox, history dialog, key handling, listener thread lifecycle |
+
+The GUI tests run headless: `tests/conftest.py` sets
+`QT_QPA_PLATFORM=offscreen` before Qt is imported, and `pyproject.toml` pins
+`qt_api = "pyqt6"` for pytest-qt. No `DISPLAY` is required, so they are safe in
+CI. Override the platform to watch the windows:
+
+```bash
+QT_QPA_PLATFORM=xcb pytest        # cocoa on macOS, windows on Win32
+```
+
+These tests are what catch the main Qt6 porting hazard — PyQt6 requires fully
+scoped enums (`Qt.AlignmentFlag.AlignLeft`, not `Qt.AlignLeft`), and a missed
+one raises `AttributeError` only when the widget is actually constructed.
+End-to-end behaviour is still worth a manual check with
+`mu2edaq-bigredbox-send`.
+
+### Qt5 → Qt6 migration notes
+
+For reference when porting the sender examples or any downstream tooling, these
+are the changes the daemon required:
+
+| Qt5 (PyQt5) | Qt6 (PyQt6) |
+|---|---|
+| `from PyQt5.QtWidgets import ...` | `from PyQt6.QtWidgets import ...` |
+| `Qt.AlignVCenter`, `Qt.AlignLeft` | `Qt.AlignmentFlag.AlignVCenter`, `...AlignLeft` |
+| `Qt.Key_Escape`, `Qt.Key_Return` | `Qt.Key.Key_Escape`, `Qt.Key.Key_Return` |
+| `Qt.WindowStaysOnTopHint`, `Qt.Window` | `Qt.WindowType.WindowStaysOnTopHint`, `Qt.WindowType.Window` |
+| `Qt.WA_DeleteOnClose` | `Qt.WidgetAttribute.WA_DeleteOnClose` |
+| `Qt.PointingHandCursor` | `Qt.CursorShape.PointingHandCursor` |
+| `Qt.LeftButton` | `Qt.MouseButton.LeftButton` |
+| `QFont.Bold` | `QFont.Weight.Bold` |
+| `QFrame.HLine` | `QFrame.Shape.HLine` |
+| `QSizePolicy.Expanding` | `QSizePolicy.Policy.Expanding` |
+| `QPainter.Antialiasing` | `QPainter.RenderHint.Antialiasing` |
+| `QDesktopWidget().availableGeometry()` | `widget.screen().availableGeometry()` (class removed) |
+| `app.exec_()` | `app.exec()` |
+
+The signal/slot API (`pyqtSignal`, `connect`), `QThread` subclassing, and the
+stylesheet strings needed no changes.
 
 ### Windows and macOS
 

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 authors = [{ name = "Mu2e DAQ Group" }]
-keywords = ["mu2e", "daq", "alert", "pyqt5", "fermilab"]
+keywords = ["mu2e", "daq", "alert", "pyqt6", "qt6", "fermilab"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: X11 Applications :: Qt",
@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
-    "PyQt5>=5.15",
+    "PyQt6>=6.4",
 ]
 
 [project.optional-dependencies]
@@ -55,3 +55,6 @@ include = ["mu2edaq_bigredbox*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Pin pytest-qt to PyQt6; tests/conftest.py forces offscreen rendering so the
+# GUI tests run headless.
+qt_api = "pyqt6"
