@@ -75,6 +75,13 @@ app. The test suite does not — it renders offscreen.
 **Entry points:** `mu2edaq-bigredbox` (listener, also `python -m mu2edaq_bigredbox`)
 and `mu2edaq-bigredbox-send` (test sender).
 
+**Pause semantics:** Pause is global, not per-window. `DAQAlertApp.is_paused`
+is true when *any* open window has it ticked, and `_show_alert()` returns early
+in that case — before the rate limiter, so a paused period does not consume the
+throttle budget of the first alert after resuming. Dropped alerts are logged.
+Closing the paused window resumes processing, which is why destroyed windows
+must be removed from `_windows` (see `_forget_window`).
+
 **Single-instance invariant:** `UDPListenerThread` binds its socket in
 `__init__` (on the calling thread), so a port clash raises `OSError` straight
 away; `DAQAlertApp` catches it and exits with `EXIT_PORT_IN_USE` (3). Do not

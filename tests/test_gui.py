@@ -161,6 +161,107 @@ def test_listener_raises_when_port_is_busy(app):
     probe.stop()
 
 
+class _StubApp:
+    """DAQAlertApp's alert-dispatch logic without a QApplication or a socket.
+
+    _show_alert only touches _windows and the throttle state, so binding the
+    real methods to a stub lets the pause semantics be tested directly.
+    """
+
+    def __init__(self):
+        from mu2edaq_bigredbox.daq_alert import DAQAlertApp
+        self._windows = []
+        self._last_accepted_time = 0.0
+        self._show_alert = DAQAlertApp._show_alert.__get__(self)
+        self._cls = DAQAlertApp
+
+    @property
+    def is_paused(self):
+        from mu2edaq_bigredbox.daq_alert import DAQAlertApp
+        return DAQAlertApp.is_paused.fget(self)
+
+
+@pytest.fixture
+def dispatcher(app, qtbot):
+    stub = _StubApp()
+    yield stub
+    for window in list(stub._windows):
+        qtbot.addWidget(window)
+
+
+def _send(dispatcher, message=None):
+    """Deliver an alert, clearing the rate limiter first."""
+    dispatcher._last_accepted_time = 0.0
+    dispatcher._show_alert(message or MESSAGE)
+
+
+def test_pause_blocks_new_windows(dispatcher):
+    """Regression for #10: a paused window must stop new windows opening."""
+    _send(dispatcher)
+    assert len(dispatcher._windows) == 1
+    dispatcher._windows[0]._pause_cb.setChecked(True)
+
+    _send(dispatcher, {**MESSAGE, "message": "arrived while paused"})
+
+    assert len(dispatcher._windows) == 1, "a new window opened while paused"
+
+
+def test_pause_blocks_updates_to_existing_windows(dispatcher):
+    """Pause stops processing entirely, not just window creation."""
+    _send(dispatcher)
+    window = dispatcher._windows[0]
+    window._pause_cb.setChecked(True)
+    counter_before = window._counter_lbl.text()
+
+    _send(dispatcher, {**MESSAGE, "message": "arrived while paused"})
+
+    assert window._counter_lbl.text() == counter_before
+    assert window._message_row.value_label.text() == MESSAGE["message"]
+    assert len(window._history) == 1
+
+
+def test_pause_is_global_across_windows(dispatcher):
+    """Pausing any one window suppresses alerts for all of them."""
+    _send(dispatcher)
+    _send(dispatcher, {**MESSAGE, "message": "second"})
+    assert len(dispatcher._windows) == 2
+
+    dispatcher._windows[0]._pause_cb.setChecked(True)   # pause only the first
+    assert dispatcher.is_paused is True
+
+    _send(dispatcher, {**MESSAGE, "message": "should be suppressed"})
+
+    assert dispatcher._windows[1]._message_row.value_label.text() == "second"
+
+
+def test_unpausing_resumes_processing(dispatcher):
+    _send(dispatcher)
+    window = dispatcher._windows[0]
+    window._pause_cb.setChecked(True)
+    _send(dispatcher, {**MESSAGE, "message": "suppressed"})
+    assert len(dispatcher._windows) == 1
+
+    window._pause_cb.setChecked(False)
+    _send(dispatcher, {**MESSAGE, "message": "after resuming"})
+
+    assert len(dispatcher._windows) == 2
+    assert dispatcher.is_paused is False
+
+
+def test_closing_the_paused_window_resumes_processing(dispatcher, app):
+    """Pause must not outlive the window that set it."""
+    _send(dispatcher)
+    window = dispatcher._windows[0]
+    window._pause_cb.setChecked(True)
+    assert dispatcher.is_paused is True
+
+    dispatcher._windows.remove(window)   # what the destroyed handler does
+    assert dispatcher.is_paused is False
+
+    _send(dispatcher, {**MESSAGE, "message": "after the paused window closed"})
+    assert len(dispatcher._windows) == 1
+
+
 def test_listener_ignores_malformed_payloads(app, qtbot):
     """Regression for #8: a bad datagram must not kill the listener.
 

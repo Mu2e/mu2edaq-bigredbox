@@ -89,6 +89,16 @@ Clean shutdown (the Qt event loop's exit code).
 .B 3
 The UDP port is already in use, meaning another listener is running.  The
 program refuses to start a second instance and exits immediately.
+.SH PAUSING ALERTS
+Each alert window carries a
+.B Pause
+checkbox.  While it is ticked the application stops processing incoming alerts
+altogether: no new windows open and no open window is updated.  Suppressed
+alerts are dropped, not queued, and each one is recorded in the log.
+.PP
+Pause is global rather than per\-window \(em ticking it on one window
+suppresses alerts for all of them.  Processing resumes as soon as no open
+window has it ticked, either by unticking it or by closing that window.
 .SH SINGLE INSTANCE
 Only one listener may own the UDP port at a time.  The port is bound before
 the PID file is written, so the binding \(em not the PID file \(em is what

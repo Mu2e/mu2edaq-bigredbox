@@ -323,6 +323,11 @@ class AlertWindow(QWidget):
 
         self._pause_cb = QCheckBox("Pause")
         self._pause_cb.setFont(QFont("Arial", 11))
+        self._pause_cb.setToolTip(
+            "Suppress all incoming alerts while ticked — no new windows open "
+            "and no existing window updates. Untick, or close this window, to "
+            "resume."
+        )
         self._pause_cb.setStyleSheet(f"""
             QCheckBox {{
                 color: {CLR_MUTED};
@@ -588,7 +593,24 @@ class DAQAlertApp:
         with open(PID_FILE, "w") as fh:
             fh.write(str(os.getpid()))
 
+    @property
+    def is_paused(self) -> bool:
+        """True while any open alert window has Pause ticked.
+
+        Pause is deliberately global rather than per-window: ticking it on one
+        window is the operator saying "stop interrupting me", so it must also
+        keep new windows from opening.
+        """
+        return any(window.is_paused for window in self._windows)
+
     def _show_alert(self, message_data: dict):
+        # ── Pause ─────────────────────────────────────────────────────────────
+        # Checked before the throttle so a paused period does not consume the
+        # rate-limit budget of the first alert that arrives after resuming.
+        if self.is_paused:
+            log.info("Paused; dropping message: %s", message_data)
+            return
+
         # ── Throttle ──────────────────────────────────────────────────────────
         now = time.monotonic()
         min_interval = 1.0 / MESSAGE_RATE_LIMIT
@@ -604,22 +626,31 @@ class DAQAlertApp:
 
         # ── Window cap ────────────────────────────────────────────────────────
         if len(self._windows) >= MAX_ALERT_WINDOWS:
-            # Find the most recently opened window that is not paused
-            for window in reversed(self._windows):
-                if not window.is_paused:
-                    window.update_message(message_data)
-                    log.info("Max windows reached; updated existing window")
-                    return
-            log.info("All windows paused; dropping message")
+            # Nothing is paused (checked above), so update the newest window.
+            self._windows[-1].update_message(message_data)
+            log.info("Max windows reached; updated existing window")
             return
 
         window = AlertWindow(message_data)
         self._windows.append(window)
-        # Remove from list when the window is closed so memory isn't leaked
-        window.destroyed.connect(lambda: self._windows.remove(window) if window in self._windows else None)
+        # Remove from the list once the window is destroyed so it can be freed
+        # and so a paused window stops suppressing alerts when it closes.
+        #
+        # The window is bound as a default argument rather than captured as a
+        # free variable: when the widget is destroyed during garbage collection
+        # this frame's cell may already have been cleared, and the resulting
+        # NameError inside a slot is fatal under PyQt6.
+        window.destroyed.connect(lambda *_, w=window: self._forget_window(w))
         window.show()
         window.raise_()
         window.activateWindow()
+
+    def _forget_window(self, window):
+        """Drop a destroyed window. Must never raise: it runs as a Qt slot."""
+        try:
+            self._windows.remove(window)
+        except ValueError:
+            pass
 
     def _handle_signal(self, signum, frame):
         log.info("Received signal %d, shutting down", signum)

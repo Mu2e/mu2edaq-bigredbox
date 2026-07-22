@@ -21,7 +21,8 @@ This is written using Qt6 (PyQt6) so it's portable. C, C++, and Python sender li
 - Stays on top of other windows until acknowledged
 - Rate-limits incoming messages to prevent flooding and unresponsiveness
 - Caps the number of simultaneous alert windows
-- Has a **Pause** box to turn off incoming messages
+- Has a **Pause** box that suppresses all incoming alerts while ticked — no
+  new windows open and no open window updates (see *Pausing alerts* below)
 - Has a history of **Errors Received** and a counter which can open up a history so you can see what is going wrong.
 - Runs as a background daemon with PID and log file management
 
@@ -200,6 +201,22 @@ Edit `src/mu2edaq_bigredbox/config.py` to change defaults:
 | `MAX_ALERT_WINDOWS` | `2` | Max simultaneous alert windows |
 | `LOG_FILE` | `/tmp/daq_alert.log` | Daemon log path |
 | `PID_FILE` | `/tmp/daq_alert.pid` | Daemon PID file path |
+
+## Pausing alerts
+
+Ticking **Pause** on any alert window stops the application processing incoming
+alerts entirely: no new windows open, and no open window updates. Alerts that
+arrive while paused are dropped, not queued — each one is recorded in
+`/tmp/daq_alert.log` so nothing is lost silently:
+
+```
+2026-07-22 12:41:02,113 [INFO] Paused; dropping message: {'system_id': ...}
+```
+
+Pause is **global, not per-window**: it is the operator saying "stop
+interrupting me", so ticking it on one window suppresses alerts for all of
+them. Processing resumes as soon as no open window has Pause ticked — untick
+it, or close the paused window.
 
 ## Dismissing an alert
 
