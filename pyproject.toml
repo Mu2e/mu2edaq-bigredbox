@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mu2edaq-bigredbox"
+dynamic = ["version"]
+description = "Mu2e DAQ 'Big Red Box' critical-alert listener and GUI daemon"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Mu2e DAQ Group" }]
+keywords = ["mu2e", "daq", "alert", "pyqt5", "fermilab"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "PyQt5>=5.15",
+]
+
+[project.optional-dependencies]
+# Service discovery is optional: the app degrades gracefully without it.
+discovery = ["mu2edaq-discovery"]
+dev = ["pytest>=7.0", "pytest-qt>=4.0", "build>=1.0"]
+
+[project.urls]
+Homepage = "https://github.com/Mu2e/mu2edaq-bigredbox"
+Repository = "https://github.com/Mu2e/mu2edaq-bigredbox"
+
+[project.scripts]
+mu2edaq-bigredbox = "mu2edaq_bigredbox.daq_alert:main"
+mu2edaq-bigredbox-send = "mu2edaq_bigredbox.demo_sender:main"
+
+[tool.setuptools]
+# Man pages install under <prefix>/share/man/man1 for `man mu2edaq-bigredbox`.
+data-files = { "share/man/man1" = [
+    "man/man1/mu2edaq-bigredbox.1",
+    "man/man1/mu2edaq-bigredbox-send.1",
+] }
+
+[tool.setuptools.dynamic]
+version = { attr = "mu2edaq_bigredbox.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mu2edaq_bigredbox*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,8 @@
+include README.md BUILD.md LICENSE requirements.txt
+include bootstrap.sh start-mu2edaq-bigredbox.sh stop-mu2edaq-bigredbox.sh
+include daq_alert.py demo_sender.py
+recursive-include man *.1
+recursive-include tests *.py
+prune libs/build
+prune libs/install
+prune venv

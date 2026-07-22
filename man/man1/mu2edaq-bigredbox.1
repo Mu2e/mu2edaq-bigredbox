@@ -1,0 +1,81 @@
+.TH MU2EDAQ-BIGREDBOX 1 "2026-07-22" "mu2edaq-bigredbox 1.1.0" "Mu2e DAQ Manual"
+.SH NAME
+mu2edaq\-bigredbox \- Mu2e DAQ critical alert listener ("Big Red Box")
+.SH SYNOPSIS
+.B mu2edaq\-bigredbox
+.br
+.B python \-m mu2edaq_bigredbox
+.SH DESCRIPTION
+.B mu2edaq\-bigredbox
+listens for JSON critical\-error alerts broadcast over UDP by Mu2e DAQ
+systems and displays a prominent always\-on\-top PyQt5 alert window for
+each one.  It is normally started as a background daemon by the control
+room via
+.BR crs-app (1)
+using the
+.B start\-mu2edaq\-bigredbox.sh
+wrapper script.
+.PP
+A GUI environment is required; on Linux the
+.B DISPLAY
+environment variable must be set.
+.PP
+If the optional
+.B mu2edaq\-discovery
+package is installed, the listener advertises itself as service
+.RB \(dq bigredbox \(dq
+so it appears in
+.BR mu2edaq\-discover (1)
+scans.  Its absence is not an error.
+.SH PAYLOAD FORMAT
+Alerts are UTF\-8 JSON datagrams:
+.PP
+.RS 4
+.nf
+{"system_id": "DAQ\-NODE\-01",
+ "timestamp": "2026\-07\-22T09:15:00",
+ "message": "Readout buffer overflow"}
+.fi
+.RE
+.SH ENVIRONMENT
+.TP
+.B CRS_PORT_UDP
+UDP port to listen on.  Exported by the control room from
+.IR apps.yaml .
+Takes precedence over the built\-in default of 37020.
+.TP
+.B DISPLAY
+X11 display to open alert windows on.  Required on Linux.
+.SH FILES
+.TP
+.I /tmp/daq_alert.pid
+PID file written at startup and removed on clean shutdown.
+.TP
+.I /tmp/daq_alert.log
+Application log.
+.SH SIGNALS
+.TP
+.B SIGTERM ", " SIGINT
+Stop the UDP listener, remove the PID file and exit cleanly.
+.SH EXIT STATUS
+Returns the Qt event loop exit code; 0 on a clean shutdown.
+.SH EXAMPLES
+Run in the foreground:
+.PP
+.RS 4
+.nf
+mu2edaq\-bigredbox
+.fi
+.RE
+.PP
+Listen on a non\-default port:
+.PP
+.RS 4
+.nf
+CRS_PORT_UDP=37030 mu2edaq\-bigredbox
+.fi
+.RE
+.SH SEE ALSO
+.BR mu2edaq\-bigredbox\-send (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

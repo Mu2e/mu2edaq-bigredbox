@@ -1,0 +1,54 @@
+.TH MU2EDAQ-BIGREDBOX-SEND 1 "2026-07-22" "mu2edaq-bigredbox 1.1.0" "Mu2e DAQ Manual"
+.SH NAME
+mu2edaq\-bigredbox\-send \- send a test DAQ critical\-error broadcast
+.SH SYNOPSIS
+.B mu2edaq\-bigredbox\-send
+[\fB\-\-system\-id\fR \fIID\fR]
+[\fB\-\-message\fR \fITEXT\fR]
+[\fB\-\-ip\fR \fIADDR\fR]
+[\fB\-\-port\fR \fIPORT\fR]
+.SH DESCRIPTION
+Broadcasts a single JSON alert datagram in the format expected by
+.BR mu2edaq\-bigredbox (1).
+It is a diagnostic utility for verifying that the listener is running and
+that broadcast traffic reaches it.
+.SH OPTIONS
+.TP
+.BR \-\-system\-id " " \fIID\fR
+System identifier included in the alert.  Default:
+.BR DAQ\-NODE\-01 .
+.TP
+.BR \-\-message " " \fITEXT\fR
+Alert message text.  Default: a generic critical pipeline error.
+.TP
+.BR \-\-ip " " \fIADDR\fR
+Destination broadcast address.  Default:
+.BR 255.255.255.255 .
+.TP
+.BR \-\-port " " \fIPORT\fR
+Destination UDP port.  Defaults to
+.B CRS_PORT_UDP
+if set, otherwise 37020.
+.TP
+.BR \-h ", " \-\-help
+Print usage and exit.
+.SH ENVIRONMENT
+.TP
+.B CRS_PORT_UDP
+Default UDP port when
+.B \-\-port
+is not given.
+.SH EXIT STATUS
+0 on success; non\-zero if the datagram could not be sent.
+.SH EXAMPLES
+.RS 4
+.nf
+mu2edaq\-bigredbox\-send
+mu2edaq\-bigredbox\-send \-\-system\-id DAQ\-NODE\-03 \-\-message "Readout buffer overflow"
+mu2edaq\-bigredbox\-send \-\-ip 192.168.1.255 \-\-port 37020
+.fi
+.RE
+.SH SEE ALSO
+.BR mu2edaq\-bigredbox (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

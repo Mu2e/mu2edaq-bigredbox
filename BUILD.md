@@ -4,7 +4,7 @@ This repository contains two independently buildable components:
 
 | Component | Language | Build system |
 |---|---|---|
-| DAQ alert daemon | Python + PyQt5 | — (run directly) |
+| DAQ alert daemon (`mu2edaq-bigredbox`) | Python + PyQt5 | setuptools / `pyproject.toml` |
 | Alert-sender libraries and examples | C, C++, Python | CMake |
 
 ---
@@ -18,11 +18,53 @@ This repository contains two independently buildable components:
 
 ### Setup
 
+The fastest path is the bootstrap script, which creates `venv/` and installs
+the package in editable mode:
+
+```bash
+./bootstrap.sh          # add --dev for pytest and the `build` frontend
+source venv/bin/activate
+```
+
+Equivalent manual install:
+
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt   # installs PyQt5>=5.15
+pip install .                     # runtime install
+pip install -e '.[dev]'           # editable + test tooling
+pip install '.[discovery]'        # optional mu2edaq-discovery support
 ```
+
+The layout is a standard `src/` package:
+
+```
+pyproject.toml
+src/mu2edaq_bigredbox/
+├── __init__.py        # __version__
+├── __main__.py        # python -m mu2edaq_bigredbox
+├── config.py
+├── daq_alert.py
+└── demo_sender.py
+man/man1/*.1
+tests/
+```
+
+### Building distributions
+
+```bash
+pip install build
+python -m build                   # writes dist/*.whl and dist/*.tar.gz
+pip install dist/mu2edaq_bigredbox-*.whl
+```
+
+The wheel installs two console scripts and both man pages
+(`<prefix>/share/man/man1`):
+
+| Command | Entry point |
+|---|---|
+| `mu2edaq-bigredbox` | `mu2edaq_bigredbox.daq_alert:main` |
+| `mu2edaq-bigredbox-send` | `mu2edaq_bigredbox.demo_sender:main` |
 
 ### Running
 
@@ -33,10 +75,43 @@ pip install -r requirements.txt   # installs PyQt5>=5.15
 # Stop the daemon
 ./stop_daq_alert.sh
 
+# Run the listener in the foreground
+mu2edaq-bigredbox
+python -m mu2edaq_bigredbox
+
 # Send a test alert to verify the GUI
-python3 demo_sender.py
-python3 demo_sender.py --system-id "DAQ-NODE-03" --message "Readout buffer overflow"
+mu2edaq-bigredbox-send
+mu2edaq-bigredbox-send --system-id "DAQ-NODE-03" --message "Readout buffer overflow"
 ```
+
+`start_daq_alert.sh` prefers the installed `mu2edaq-bigredbox` entry point and
+falls back to the root-level `daq_alert.py` shim when the package has not been
+installed.
+
+### Tests
+
+```bash
+pip install -e '.[dev]'
+pytest
+```
+
+`tests/test_packaging.py` covers the package metadata, `CRS_PORT_UDP` port
+override, the UDP payload format, and console-script registration. The GUI
+itself is still verified manually with `mu2edaq-bigredbox-send`.
+
+### Windows and macOS
+
+The package is pure Python and installs identically on all three platforms:
+
+```powershell
+py -3 -m venv venv
+venv\Scripts\activate
+pip install .
+mu2edaq-bigredbox
+```
+
+On Windows there is no `DISPLAY` requirement; the shell scripts are POSIX-only,
+so start and stop the listener with the console script directly.
 
 ---
 

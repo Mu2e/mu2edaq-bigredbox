@@ -27,8 +27,18 @@ rm -f "$PID_FILE"
 PY=python3
 [[ -x ./venv/bin/python ]] && PY=./venv/bin/python
 
+# Prefer the installed console-script entry point; fall back to the checkout
+# shim when the package has not been installed (see bootstrap.sh).
+if [[ -x ./venv/bin/mu2edaq-bigredbox ]]; then
+  LAUNCH=(./venv/bin/mu2edaq-bigredbox)
+elif command -v mu2edaq-bigredbox >/dev/null 2>&1; then
+  LAUNCH=(mu2edaq-bigredbox)
+else
+  LAUNCH=("$PY" "$SCRIPT_DIR/daq_alert.py")
+fi
+
 echo "Starting Big Red Box / DAQ Alert listener (udp=$CRS_PORT_UDP)"
-nohup "$PY" "$SCRIPT_DIR/daq_alert.py" >> "$LOG_FILE" 2>&1 &
+nohup "${LAUNCH[@]}" >> "$LOG_FILE" 2>&1 &
 bgpid=$!
 sleep 1
 if ! kill -0 "$bgpid" 2>/dev/null; then
