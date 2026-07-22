@@ -136,3 +136,54 @@ def test_listener_thread_start_stop(app):
     thread.start()
     thread.stop()
     assert not thread.isRunning()
+
+
+def test_listener_raises_when_port_is_busy(app):
+    """A second listener must fail loudly, not run without a socket.
+
+    Regression test: the bind used to happen inside run(), so a port clash only
+    produced a log line and left the application alive but deaf.
+    """
+    import socket
+
+    holder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    holder.bind(("", 0))
+    port = holder.getsockname()[1]
+    try:
+        with pytest.raises(OSError):
+            UDPListenerThread(port=port)
+    finally:
+        holder.close()
+
+    # The failed attempt must not have leaked a bound socket: the port is free.
+    probe = UDPListenerThread(port=port)
+    probe.stop()
+
+
+def test_second_instance_exits_with_port_in_use_status(tmp_path):
+    """End-to-end: launching a second listener exits EXIT_PORT_IN_USE (3)."""
+    import socket
+    import subprocess
+    import sys as _sys
+
+    from mu2edaq_bigredbox.daq_alert import EXIT_PORT_IN_USE
+
+    holder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    holder.bind(("", 0))
+    port = holder.getsockname()[1]
+
+    env = dict(os.environ,
+               CRS_PORT_UDP=str(port),
+               QT_QPA_PLATFORM="offscreen")
+    try:
+        result = subprocess.run(
+            [_sys.executable, "-m", "mu2edaq_bigredbox"],
+            env=env, capture_output=True, text=True, timeout=60,
+        )
+    finally:
+        holder.close()
+
+    assert result.returncode == EXIT_PORT_IN_USE, result.stderr
+    assert "already running" in result.stderr

@@ -82,7 +82,22 @@ Application log.
 .B SIGTERM ", " SIGINT
 Stop the UDP listener, remove the PID file and exit cleanly.
 .SH EXIT STATUS
-Returns the Qt event loop exit code; 0 on a clean shutdown.
+.TP
+.B 0
+Clean shutdown (the Qt event loop's exit code).
+.TP
+.B 3
+The UDP port is already in use, meaning another listener is running.  The
+program refuses to start a second instance and exits immediately.
+.SH SINGLE INSTANCE
+Only one listener may own the UDP port at a time.  The port is bound before
+the PID file is written, so the binding \(em not the PID file \(em is what
+decides which process is the live listener.  A second invocation exits with
+status 3 rather than running on with a dead listener thread.
+.PP
+.B stop\-mu2edaq\-bigredbox.sh
+falls back to the process holding the UDP port when the PID file is missing,
+so a listener started by hand can still be stopped.
 .SH EXAMPLES
 Run in the foreground:
 .PP

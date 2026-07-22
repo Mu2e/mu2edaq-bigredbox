@@ -75,6 +75,15 @@ app. The test suite does not — it renders offscreen.
 **Entry points:** `mu2edaq-bigredbox` (listener, also `python -m mu2edaq_bigredbox`)
 and `mu2edaq-bigredbox-send` (test sender).
 
+**Single-instance invariant:** `UDPListenerThread` binds its socket in
+`__init__` (on the calling thread), so a port clash raises `OSError` straight
+away; `DAQAlertApp` catches it and exits with `EXIT_PORT_IN_USE` (3). Do not
+move the bind back into `run()` — that was the original bug: the app stayed
+alive with a dead listener thread and overwrote the PID file of the real
+listener. The PID file is written only after a successful bind, so port
+ownership is the source of truth. `start_daq_alert.sh` probes the port as well
+as the PID file, and `stop_daq_alert.sh` falls back to the port holder.
+
 **Service discovery:** when `mu2edaq-discovery` is installed, `DAQAlertApp`
 starts a `Responder` advertising app `bigredbox` on the UDP alert port. It
 reports `version=__version__` plus a `meta` map built by

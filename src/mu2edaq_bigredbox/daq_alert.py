@@ -35,6 +35,13 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+# Exit status used when the UDP port is already taken, i.e. another listener
+# is running.  Distinct from 1 so the control room can tell the two apart.
+EXIT_PORT_IN_USE = 3
+
+PORT_CHECK_HINT = "lsof -nP -iUDP:%d" % BROADCAST_PORT
+
+
 # ── Colours & typography ───────────────────────────────────────────────────────
 CLR_BG          = "#0D0D0D"   # near-black background
 CLR_PANEL       = "#1A1A1A"   # card surface
@@ -86,7 +93,13 @@ class ClickableLabel(QLabel):
 
 # ── UDP listener thread ────────────────────────────────────────────────────────
 class UDPListenerThread(QThread):
-    """Background thread that listens for UDP broadcast messages."""
+    """Background thread that listens for UDP broadcast messages.
+
+    The socket is bound in the constructor, on the calling thread, so a port
+    conflict raises OSError immediately.  Binding inside run() instead would
+    only log the failure from a background thread and leave the application
+    running with a dead listener — a Big Red Box that can never turn red.
+    """
 
     message_received = pyqtSignal(dict)
 
@@ -95,21 +108,21 @@ class UDPListenerThread(QThread):
         self.port = port
         self._running = True
 
-    def run(self):
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self._sock.settimeout(1.0)
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            sock.settimeout(1.0)
-            sock.bind(("", self.port))
-            log.info("Listening for broadcast messages on port %d", self.port)
-        except OSError as exc:
-            log.error("Failed to bind UDP socket: %s", exc)
-            return
+            self._sock.bind(("", port))
+        except OSError:
+            self._sock.close()
+            raise
+        log.info("Listening for broadcast messages on port %d", self.port)
 
+    def run(self):
         while self._running:
             try:
-                data, addr = sock.recvfrom(65535)
+                data, addr = self._sock.recvfrom(65535)
                 log.info("Received message from %s", addr)
                 try:
                     payload = json.loads(data.decode("utf-8"))
@@ -123,12 +136,14 @@ class UDPListenerThread(QThread):
                     log.error("Socket error: %s", exc)
                 break
 
-        sock.close()
+        self._sock.close()
         log.info("UDP listener stopped")
 
     def stop(self):
         self._running = False
         self.wait(3000)
+        # If the thread was never started, run() never closed the socket.
+        self._sock.close()
 
 
 # ── Gradient banner widget ─────────────────────────────────────────────────────
@@ -490,7 +505,21 @@ class DAQAlertApp:
         self._windows: list = []   # keep references so windows aren't GC'd
         self._last_accepted_time: float = 0.0
 
-        self.listener = UDPListenerThread(port=BROADCAST_PORT)
+        # Bind before anything else claims to be running.  A busy port means
+        # another listener already owns it, so refuse to start a second one
+        # rather than sitting here unable to receive alerts.
+        try:
+            self.listener = UDPListenerThread(port=BROADCAST_PORT)
+        except OSError as exc:
+            log.critical("Cannot listen on UDP port %d: %s", BROADCAST_PORT, exc)
+            log.critical("A DAQ Alert listener is probably already running; "
+                         "not starting a second one.")
+            print("error: cannot listen on UDP port %d: %s" % (BROADCAST_PORT, exc),
+                  file=sys.stderr)
+            print("error: a DAQ Alert listener is probably already running "
+                  "(check with: %s)" % PORT_CHECK_HINT, file=sys.stderr)
+            raise SystemExit(EXIT_PORT_IN_USE)
+
         self.listener.message_received.connect(self._show_alert)
         self.listener.start()
 

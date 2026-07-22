@@ -90,6 +90,27 @@ checkout even when the package is not installed.
 
 The daemon writes logs to `/tmp/daq_alert.log` and stores its PID at `/tmp/daq_alert.pid`.
 
+## Single instance and troubleshooting
+
+Only one listener can own the UDP port at a time. The port is bound **before**
+the PID file is written, so port ownership — not the PID file — is what decides
+which process is the live listener:
+
+- Starting a second listener exits immediately with status **3** and an
+  explanatory message. It will not sit there with a dead listener thread.
+- `start_daq_alert.sh` checks the PID file *and* probes the port, so it also
+  detects a listener started by hand or one whose PID file was deleted.
+- `stop_daq_alert.sh` falls back to the process holding the UDP port when the
+  PID file is missing, so an orphaned listener can still be stopped. It only
+  ever stops this application — an unrelated process holding the port is left
+  alone.
+
+To see who currently owns the port:
+
+```bash
+lsof -nP -iUDP:37020
+```
+
 ## Service discovery
 
 When the optional `mu2edaq-discovery` package is installed, the listener answers
