@@ -56,15 +56,15 @@ if ! python -c 'import mu2edaq_discovery' 2>/dev/null; then
     fi
 fi
 
-echo "Installing dependencies from requirements.txt"
-pip install -r "$HERE/requirements.txt"
-
 if [ "$DEV" = 1 ]; then
-    echo "Installing dev tools (pytest)"
-    pip install pytest
+    echo "Installing mu2edaq-bigredbox (editable) with dev extras"
+    pip install -e "$HERE[dev]"
+else
+    echo "Installing mu2edaq-bigredbox (editable)"
+    pip install -e "$HERE"
 fi
 
 echo ""
 echo "Bootstrap complete. Activate with:  source venv/bin/activate"
 echo "Start the alert daemon with:        ./start_daq_alert.sh"
-echo "Send a test alert with:             python3 demo_sender.py"
+echo "Send a test alert with:             mu2edaq-bigredbox-send"

@@ -20,9 +20,9 @@ All code should be compatible with python 3.9
 ./stop_daq_alert.sh
 
 # Send a test alert (to verify the GUI works)
-python3 demo_sender.py
-python3 demo_sender.py --system-id "DAQ-NODE-03" --message "Readout buffer overflow"
-python3 demo_sender.py --ip 192.168.1.255 --port 37020
+mu2edaq-bigredbox-send
+mu2edaq-bigredbox-send --system-id "DAQ-NODE-03" --message "Readout buffer overflow"
+mu2edaq-bigredbox-send --ip 192.168.1.255 --port 37020
 ```
 
 The daemon logs to `/tmp/daq_alert.log` and stores its PID at `/tmp/daq_alert.pid`.
@@ -30,7 +30,11 @@ The daemon logs to `/tmp/daq_alert.log` and stores its PID at `/tmp/daq_alert.pi
 ## Setup
 
 ```bash
-pip install -r requirements.txt  # PyQt5>=5.15 is the only dependency
+./bootstrap.sh            # creates venv/ and installs the package (--dev adds pytest)
+source venv/bin/activate
+
+# or, manually:
+pip install -e '.[dev]'
 ```
 
 Requires a `DISPLAY` environment variable set (X11/GUI environment).
@@ -49,10 +53,17 @@ Requires a `DISPLAY` environment variable set (X11/GUI environment).
 ```
 
 **Key files:**
-- `daq_alert.py` — Main application: UDP listener thread, alert window GUI, daemon lifecycle
-- `demo_sender.py` — Test utility to send mock alert messages
-- `config.py` — Shared constants (`BROADCAST_PORT=37020`, log/PID file paths)
+- `pyproject.toml` — setuptools build; `src/` layout, console scripts, man pages
+- `src/mu2edaq_bigredbox/daq_alert.py` — Main application: UDP listener thread, alert window GUI, daemon lifecycle
+- `src/mu2edaq_bigredbox/demo_sender.py` — Test utility to send mock alert messages
+- `src/mu2edaq_bigredbox/config.py` — Shared constants (`BROADCAST_PORT=37020`, log/PID file paths)
+- `daq_alert.py`, `demo_sender.py` (repo root) — compatibility shims that import from the package
+- `man/man1/` — man pages for `mu2edaq-bigredbox` and `mu2edaq-bigredbox-send`
 
-## No Test Framework
+**Entry points:** `mu2edaq-bigredbox` (listener, also `python -m mu2edaq_bigredbox`)
+and `mu2edaq-bigredbox-send` (test sender).
 
-There is no automated test suite. Use `demo_sender.py` for manual functional testing.
+## Tests
+
+`pytest` runs the packaging/protocol smoke tests in `tests/`. The GUI has no
+automated coverage — use `mu2edaq-bigredbox-send` for manual functional testing.

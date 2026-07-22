@@ -34,13 +34,32 @@ This does work with ssh forwarded X11 connections
 
 ## Install
 
-Create and activate a Python virtual environment, then install dependencies:
+The listener is a standard Python package (`mu2edaq-bigredbox`). The bootstrap
+script creates `venv/` and installs it in editable mode:
+
+```bash
+./bootstrap.sh          # add --dev for pytest and build tooling
+source venv/bin/activate
+```
+
+Or install it by hand into any environment:
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt   # PyQt5>=5.15
+pip install .                       # or: pip install -e .
+pip install '.[discovery]'          # plus mu2edaq-discovery auto-discovery
 ```
+
+Installing provides two commands:
+
+| Command | Purpose |
+|---------|---------|
+| `mu2edaq-bigredbox` | Run the alert listener (also `python -m mu2edaq_bigredbox`) |
+| `mu2edaq-bigredbox-send` | Send a test alert |
+
+Man pages are installed to `<prefix>/share/man/man1`; inside a venv read them
+with `man ./venv/share/man/man1/mu2edaq-bigredbox.1`.
 
 ## Usage
 
@@ -52,10 +71,14 @@ pip install -r requirements.txt   # PyQt5>=5.15
 ./stop_daq_alert.sh
 
 # Send a test alert to verify the GUI works
-python3 demo_sender.py
-python3 demo_sender.py --system-id "DAQ-NODE-03" --message "Readout buffer overflow"
-python3 demo_sender.py --ip 192.168.1.255 --port 37020
+mu2edaq-bigredbox-send
+mu2edaq-bigredbox-send --system-id "DAQ-NODE-03" --message "Readout buffer overflow"
+mu2edaq-bigredbox-send --ip 192.168.1.255 --port 37020
 ```
+
+`daq_alert.py` and `demo_sender.py` remain at the repository root as thin
+shims, so `python3 daq_alert.py` and `python3 demo_sender.py` still work from a
+checkout even when the package is not installed.
 
 The daemon writes logs to `/tmp/daq_alert.log` and stores its PID at `/tmp/daq_alert.pid`.
 
@@ -90,9 +113,14 @@ UDPListenerThread   ← background QThread, emits message_received signal
 
 | File | Purpose |
 |------|---------|
-| `daq_alert.py` | Main application: UDP listener thread, alert window GUI, daemon lifecycle |
-| `demo_sender.py` | Test utility to send mock alert messages |
-| `config.py` | Shared constants (`BROADCAST_PORT`, `MESSAGE_RATE_LIMIT`, `MAX_ALERT_WINDOWS`, log/PID paths) |
+| `pyproject.toml` | Package build (setuptools, `src/` layout, console scripts, man pages) |
+| `src/mu2edaq_bigredbox/daq_alert.py` | Main application: UDP listener thread, alert window GUI, daemon lifecycle |
+| `src/mu2edaq_bigredbox/demo_sender.py` | Test utility to send mock alert messages |
+| `src/mu2edaq_bigredbox/config.py` | Shared constants (`BROADCAST_PORT`, `MESSAGE_RATE_LIMIT`, `MAX_ALERT_WINDOWS`, log/PID paths) |
+| `daq_alert.py`, `demo_sender.py` | Root-level compatibility shims for running from a checkout |
+| `man/man1/` | Man pages for both console scripts |
+| `tests/` | pytest smoke tests for the package build and the UDP payload |
+| `bootstrap.sh` | Create `venv/` and install the package |
 | `start_daq_alert.sh` | Start the daemon in the background |
 | `stop_daq_alert.sh` | Stop the running daemon |
 | `libs/` | C, C++, and Python alert-sender libraries with CMake build system |
@@ -101,11 +129,11 @@ UDPListenerThread   ← background QThread, emits message_received signal
 
 ## Configuration
 
-Edit `config.py` to change defaults:
+Edit `src/mu2edaq_bigredbox/config.py` to change defaults:
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `BROADCAST_PORT` | `37020` | UDP port to listen on |
+| `BROADCAST_PORT` | `37020` | UDP port to listen on (overridden by `CRS_PORT_UDP`) |
 | `MESSAGE_RATE_LIMIT` | `10.0` | Max messages accepted per second |
 | `MAX_ALERT_WINDOWS` | `2` | Max simultaneous alert windows |
 | `LOG_FILE` | `/tmp/daq_alert.log` | Daemon log path |
