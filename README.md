@@ -90,6 +90,38 @@ checkout even when the package is not installed.
 
 The daemon writes logs to `/tmp/daq_alert.log` and stores its PID at `/tmp/daq_alert.pid`.
 
+## Service discovery
+
+When the optional `mu2edaq-discovery` package is installed, the listener answers
+DISCOVER requests with its version information, so you can audit what is
+deployed on each node without logging in:
+
+```bash
+mu2edaq-discover --filter app=bigredbox --json
+```
+
+```json
+{
+  "app": "bigredbox",
+  "name": "Big Red Box Alerts",
+  "port": 37020,
+  "scheme": "udp",
+  "version": "2.0.0",
+  "meta": {
+    "version": "2.0.0",
+    "qt": "6.11.0",
+    "pyqt": "6.11.0",
+    "python": "3.12.1",
+    "udp_port": "37020"
+  }
+}
+```
+
+The package version is reported both as the announcement's `version` field and
+inside `meta`; `meta` additionally carries the Qt, PyQt and Python runtime
+versions and the UDP port actually in use. Discovery remains entirely optional —
+without the package the listener runs normally and simply does not announce.
+
 ## Alert payload format
 
 External DAQ systems broadcast JSON over UDP:

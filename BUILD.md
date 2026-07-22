@@ -133,6 +133,21 @@ one raises `AttributeError` only when the widget is actually constructed.
 End-to-end behaviour is still worth a manual check with
 `mu2edaq-bigredbox-send`.
 
+### Service discovery
+
+With the `discovery` extra installed, the listener answers DISCOVER requests
+with its version information:
+
+```bash
+mu2edaq-discover --filter app=bigredbox --json
+```
+
+The announcement carries the package version in `version`, and a `meta` map
+with the package, Qt, PyQt and Python versions plus the UDP port in use. This
+lets an operator audit deployed versions across DAQ nodes without logging into
+them. Without the `mu2edaq-discovery` package the listener runs normally and
+does not announce.
+
 ### Qt5 → Qt6 migration notes
 
 For reference when porting the sender examples or any downstream tooling, these

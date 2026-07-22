@@ -75,6 +75,16 @@ app. The test suite does not — it renders offscreen.
 **Entry points:** `mu2edaq-bigredbox` (listener, also `python -m mu2edaq_bigredbox`)
 and `mu2edaq-bigredbox-send` (test sender).
 
+**Service discovery:** when `mu2edaq-discovery` is installed, `DAQAlertApp`
+starts a `Responder` advertising app `bigredbox` on the UDP alert port. It
+reports `version=__version__` plus a `meta` map built by
+`discovery_metadata()` in `daq_alert.py` (package version, Qt, PyQt, Python,
+UDP port). Keep `meta` values short strings — mu2edaq-discovery caps a
+datagram at 1400 bytes. The whole responder is best-effort: a missing package
+or a failure must never block startup.
+
+    mu2edaq-discover --filter app=bigredbox --json
+
 ## Tests
 
 ```bash

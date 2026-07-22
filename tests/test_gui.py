@@ -19,6 +19,7 @@ pytest.importorskip("PyQt6", reason="PyQt6 is required for the GUI tests")
 from PyQt6.QtCore import Qt  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
+import mu2edaq_bigredbox  # noqa: E402
 from mu2edaq_bigredbox.daq_alert import (  # noqa: E402
     AlertWindow,
     ClickableLabel,
@@ -26,6 +27,7 @@ from mu2edaq_bigredbox.daq_alert import (  # noqa: E402
     HistoryDialog,
     RedBanner,
     UDPListenerThread,
+    discovery_metadata,
 )
 
 MESSAGE = {
@@ -107,6 +109,25 @@ def test_escape_closes_alert_window(app, qtbot):
 
     qtbot.keyClick(window, Qt.Key.Key_Escape)
     qtbot.waitUntil(lambda: not window.isVisible(), timeout=2000)
+
+
+def test_discovery_metadata_reports_versions():
+    """The DISCOVER reply carries the package and Qt runtime versions."""
+    meta = discovery_metadata()
+
+    assert meta["version"] == mu2edaq_bigredbox.__version__
+    assert meta["qt"].startswith("6.")      # Qt6 after the PyQt5 migration
+    assert meta["pyqt"].startswith("6.")
+    assert meta["python"].count(".") == 2
+    assert meta["udp_port"].isdigit()
+
+
+def test_discovery_metadata_fits_in_a_datagram():
+    """mu2edaq-discovery caps an announcement at 1400 bytes."""
+    import json
+
+    assert len(json.dumps(discovery_metadata()).encode("utf-8")) < 400
+    assert all(isinstance(v, str) for v in discovery_metadata().values())
 
 
 def test_listener_thread_start_stop(app):

@@ -27,6 +27,30 @@ package is installed, the listener advertises itself as service
 so it appears in
 .BR mu2edaq\-discover (1)
 scans.  Its absence is not an error.
+.SH DISCOVERY RESPONSE
+In reply to a DISCOVER request the listener announces its package version in
+the
+.B version
+field and the runtime detail below under
+.BR meta ,
+so an operator can confirm what is deployed on a node without logging into it:
+.PP
+.RS 4
+.nf
+{"app": "bigredbox", "name": "Big Red Box Alerts",
+ "port": 37020, "scheme": "udp", "version": "2.0.0",
+ "meta": {"version": "2.0.0", "qt": "6.11.0", "pyqt": "6.11.0",
+          "python": "3.12.1", "udp_port": "37020"}}
+.fi
+.RE
+.PP
+Query it with:
+.PP
+.RS 4
+.nf
+mu2edaq\-discover \-\-filter app=bigredbox \-\-json
+.fi
+.RE
 .SH PAYLOAD FORMAT
 Alerts are UTF\-8 JSON datagrams:
 .PP

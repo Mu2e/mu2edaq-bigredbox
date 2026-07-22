@@ -20,9 +20,10 @@ from PyQt6.QtWidgets import (
     QPushButton, QFrame, QSizePolicy, QGraphicsDropShadowEffect,
     QScrollArea, QCheckBox
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QT_VERSION_STR, PYQT_VERSION_STR
 from PyQt6.QtGui import QFont, QColor, QLinearGradient, QPainter, QBrush
 
+from . import __version__
 from .config import BROADCAST_PORT, PID_FILE, LOG_FILE, MESSAGE_RATE_LIMIT, MAX_ALERT_WINDOWS
 
 
@@ -47,6 +48,24 @@ CLR_DIVIDER     = "#2E2E2E"   # subtle divider
 CLR_BTN_BG      = "#E82020"
 CLR_BTN_HOVER   = "#FF3A3A"
 CLR_BTN_PRESS   = "#B01818"
+
+
+# ── Discovery metadata ─────────────────────────────────────────────────────────
+def discovery_metadata() -> dict:
+    """Extra version detail reported in reply to a discovery DISCOVER request.
+
+    The package version itself is sent as the announcement's `version` field;
+    this fills the `meta` map with the runtime versions an operator needs when
+    a node misbehaves.  Values are kept short: mu2edaq-discovery caps a
+    datagram at 1400 bytes.
+    """
+    return {
+        "version": __version__,
+        "qt": QT_VERSION_STR,
+        "pyqt": PYQT_VERSION_STR,
+        "python": "%d.%d.%d" % sys.version_info[:3],
+        "udp_port": str(BROADCAST_PORT),
+    }
 
 
 # ── Clickable label ────────────────────────────────────────────────────────────
@@ -483,7 +502,9 @@ class DAQAlertApp:
             from mu2edaq_discovery import Responder
             self._responder = Responder(name="Big Red Box Alerts",
                                         app="bigredbox",
-                                        port=BROADCAST_PORT, scheme="udp")
+                                        port=BROADCAST_PORT, scheme="udp",
+                                        version=__version__,
+                                        meta=discovery_metadata())
             self._responder.start()
         except Exception as exc:
             log.warning("Discovery responder not started: %s", exc)
