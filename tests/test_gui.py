@@ -161,6 +161,89 @@ def test_listener_raises_when_port_is_busy(app):
     probe.stop()
 
 
+def test_listener_ignores_malformed_payloads(app, qtbot):
+    """Regression for #8: a bad datagram must not kill the listener.
+
+    json.loads returns str/int/list/None for well-formed JSON that is not an
+    object; emitting one on pyqtSignal(dict) raised TypeError inside run(),
+    which PyQt6 escalated to qFatal() -- the whole process aborted (SIGABRT).
+    """
+    import json as _json
+    import socket
+
+    thread = UDPListenerThread(port=0)
+    port = thread._sock.getsockname()[1]
+    received = []
+    thread.message_received.connect(received.append)
+    thread.start()
+
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    hostile = [
+        b'"just a string"',     # JSON string
+        b"12345",               # JSON number
+        b"[1, 2, 3]",           # JSON array
+        b"null",                # JSON null
+        b"true",                # JSON bool
+        b"not json at all",     # invalid JSON
+        b"\xff\xfe\x00",        # invalid UTF-8
+    ]
+    try:
+        for raw in hostile:
+            sender.sendto(raw, ("127.0.0.1", port))
+        # A valid alert sent afterwards must still arrive, proving the thread
+        # survived every one of the payloads above.
+        sender.sendto(_json.dumps(MESSAGE).encode("utf-8"), ("127.0.0.1", port))
+        qtbot.waitUntil(lambda: bool(received), timeout=5000)
+    finally:
+        sender.close()
+        thread.stop()
+
+    assert received == [MESSAGE]
+
+
+@pytest.mark.parametrize("payload, expected_message", [
+    ({"system_id": "A", "timestamp": "T", "message": 12345}, "12345"),
+    ({"system_id": "A", "timestamp": "T", "message": {"k": "v"}}, "{'k': 'v'}"),
+    ({"system_id": "A", "timestamp": "T", "message": ["a", "b"]}, "['a', 'b']"),
+    ({"system_id": "A", "timestamp": "T", "message": None}, "(no message text)"),
+    ({"system_id": "A", "timestamp": "T"}, "(no message text)"),
+])
+def test_alert_window_survives_non_string_fields(app, qtbot, payload, expected_message):
+    """Regression for #9: non-string fields used to abort the process."""
+    window = AlertWindow(payload)
+    qtbot.addWidget(window)
+    assert window._message_row.value_label.text() == expected_message
+
+
+def test_update_message_survives_non_string_fields(app, qtbot):
+    """#9 also reached QLabel.setText() via update_message()."""
+    window = AlertWindow(MESSAGE)
+    qtbot.addWidget(window)
+
+    window.update_message({"system_id": 7, "timestamp": 1.5, "message": None})
+
+    assert window._system_id_row.value_label.text() == "7"
+    assert window._timestamp_row.value_label.text() == "1.5"
+    assert window._message_row.value_label.text() == "(no message text)"
+
+
+def test_history_dialog_survives_non_string_fields(app, qtbot):
+    """#9 reached a third call site: the history entry labels."""
+    dialog = HistoryDialog([{"system_id": 7, "timestamp": None, "message": {"k": 1}}])
+    qtbot.addWidget(dialog)
+    assert "1 message(s)" in dialog.windowTitle()
+
+
+def test_field_text_coercion():
+    from mu2edaq_bigredbox.daq_alert import field_text
+
+    assert field_text({"k": "text"}, "k", "d") == "text"
+    assert field_text({"k": 42}, "k", "d") == "42"
+    assert field_text({"k": None}, "k", "d") == "d"      # null -> default
+    assert field_text({}, "k", "d") == "d"               # absent -> default
+    assert field_text({"k": ""}, "k", "d") == ""         # empty string kept
+
+
 def test_second_instance_exits_with_port_in_use_status(tmp_path):
     """End-to-end: launching a second listener exits EXIT_PORT_IN_USE (3)."""
     import socket

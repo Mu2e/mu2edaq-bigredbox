@@ -75,6 +75,24 @@ def discovery_metadata() -> dict:
     }
 
 
+# ── Payload field access ───────────────────────────────────────────────────────
+def field_text(data: dict, key: str, default: str) -> str:
+    """Return ``data[key]`` as text that Qt will accept.
+
+    dict.get() only substitutes the default when the key is *absent*, so a
+    sender that puts a number or a nested object in `message` hands a non-str
+    straight to QLabel, which raises TypeError.  Inside a slot PyQt6 turns that
+    into qFatal() and the application dies.  Showing a stringified value is
+    always better than losing the alert window.
+    """
+    value = data.get(key, default)
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return default
+    return str(value)
+
+
 # ── Clickable label ────────────────────────────────────────────────────────────
 class ClickableLabel(QLabel):
     """A QLabel that emits clicked() when left-clicked."""
@@ -126,15 +144,30 @@ class UDPListenerThread(QThread):
                 log.info("Received message from %s", addr)
                 try:
                     payload = json.loads(data.decode("utf-8"))
-                    self.message_received.emit(payload)
                 except (json.JSONDecodeError, UnicodeDecodeError) as exc:
                     log.warning("Could not parse message from %s: %s", addr, exc)
+                    continue
+                # json.loads happily returns str/int/list/None for well-formed
+                # JSON that is not an object.  message_received is
+                # pyqtSignal(dict), and emitting the wrong type raises
+                # TypeError here — which PyQt6 escalates to qFatal(), killing
+                # the process.  A bad datagram must never do that.
+                if not isinstance(payload, dict):
+                    log.warning("Ignoring non-object payload from %s: %r",
+                                addr, payload)
+                    continue
+                self.message_received.emit(payload)
             except socket.timeout:
                 continue
             except OSError as exc:
                 if self._running:
                     log.error("Socket error: %s", exc)
                 break
+            except Exception:
+                # Last line of defence: an exception escaping run() aborts the
+                # whole application under PyQt6, taking DAQ alerting with it.
+                # Losing one datagram is always preferable.
+                log.exception("Unexpected error handling a datagram; ignoring it")
 
         self._sock.close()
         log.info("UDP listener stopped")
@@ -224,9 +257,9 @@ class AlertWindow(QWidget):
         self._build_ui(message_data)
 
     def _build_ui(self, data: dict):
-        system_id = data.get("system_id", "UNKNOWN")
-        timestamp = data.get("timestamp", "UNKNOWN")
-        message   = data.get("message",   "(no message text)")
+        system_id = field_text(data, "system_id", "UNKNOWN")
+        timestamp = field_text(data, "timestamp", "UNKNOWN")
+        message   = field_text(data, "message",   "(no message text)")
 
         self.setWindowTitle("CRITICAL DAQ ERROR")
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Window)
@@ -381,9 +414,10 @@ class AlertWindow(QWidget):
     def update_message(self, data: dict):
         """Replace displayed fields with new message data and increment the counter."""
         self._history.append(data)
-        self._system_id_row.value_label.setText(data.get("system_id", "UNKNOWN"))
-        self._timestamp_row.value_label.setText(data.get("timestamp", "UNKNOWN"))
-        self._message_row.value_label.setText(data.get("message", "(no message text)"))
+        self._system_id_row.value_label.setText(field_text(data, "system_id", "UNKNOWN"))
+        self._timestamp_row.value_label.setText(field_text(data, "timestamp", "UNKNOWN"))
+        self._message_row.value_label.setText(
+            field_text(data, "message", "(no message text)"))
         self._error_count += 1
         self._counter_lbl.setText(f"Errors Received:  {self._error_count}")
         # Refresh the open history dialog if it is visible
@@ -479,7 +513,7 @@ class HistoryDialog(QWidget):
             lbl.setStyleSheet(f"color: {CLR_MUTED}; background: transparent; letter-spacing: 2px;")
             lbl.setFixedWidth(110)
             lbl.setAlignment(Qt.AlignmentFlag.AlignTop)
-            val = QLabel(data.get(key, "UNKNOWN"))
+            val = QLabel(field_text(data, key, "UNKNOWN"))
             val.setFont(QFont("Arial", 13))
             val.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
             val.setWordWrap(True)
