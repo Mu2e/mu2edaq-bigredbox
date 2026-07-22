@@ -66,7 +66,26 @@ Alerts are UTF\-8 JSON datagrams:
 .B CRS_PORT_UDP
 UDP port to listen on.  Exported by the control room from
 .IR apps.yaml .
-Takes precedence over the built\-in default of 37020.
+Takes precedence over the built\-in default of 37020.  A blank, non\-numeric
+or out\-of\-range value is ignored with a warning and the default is used,
+so a malformed
+.I apps.yaml
+entry cannot stop the listener starting.
+.TP
+.B DAQ_ALERT_LOG_FILE
+Log file path.  Defaults to
+.IR /tmp/daq_alert.log ,
+which is shared by every user on the machine; set this when more than one
+operator runs the listener on the same node.  If the log cannot be opened the
+program logs to standard error instead of failing.
+.TP
+.B DAQ_ALERT_PID_FILE
+PID file path.  Defaults to
+.IR /tmp/daq_alert.pid .
+If it cannot be written the listener carries on without it \(em it already
+owns the UDP port, and
+.B stop\-mu2edaq\-bigredbox.sh
+can still find it by port.
 .TP
 .B DISPLAY
 X11 display to open alert windows on.  Required on Linux.

@@ -199,8 +199,8 @@ Edit `src/mu2edaq_bigredbox/config.py` to change defaults:
 | `BROADCAST_PORT` | `37020` | UDP port to listen on (overridden by `CRS_PORT_UDP`) |
 | `MESSAGE_RATE_LIMIT` | `10.0` | Max messages accepted per second |
 | `MAX_ALERT_WINDOWS` | `2` | Max simultaneous alert windows |
-| `LOG_FILE` | `/tmp/daq_alert.log` | Daemon log path |
-| `PID_FILE` | `/tmp/daq_alert.pid` | Daemon PID file path |
+| `LOG_FILE` | `/tmp/daq_alert.log` | Daemon log path (overridden by `DAQ_ALERT_LOG_FILE`) |
+| `PID_FILE` | `/tmp/daq_alert.pid` | Daemon PID file path (overridden by `DAQ_ALERT_PID_FILE`) |
 
 ## Pausing alerts
 
@@ -217,6 +217,22 @@ Pause is **global, not per-window**: it is the operator saying "stop
 interrupting me", so ticking it on one window suppresses alerts for all of
 them. Processing resumes as soon as no open window has Pause ticked — untick
 it, or close the paused window.
+
+### Environment overrides
+
+| Variable | Overrides | Notes |
+|---|---|---|
+| `CRS_PORT_UDP` | `BROADCAST_PORT` | Exported by the control room's `crs-app`. A blank, non-numeric or out-of-range value falls back to 37020 with a warning rather than failing to start |
+| `DAQ_ALERT_LOG_FILE` | `LOG_FILE` | Falls back to stderr if the file cannot be opened |
+| `DAQ_ALERT_PID_FILE` | `PID_FILE` | The listener keeps running if it cannot be written |
+
+The default `/tmp` paths are shared by every user on a machine, so the first
+operator to start the listener owns them. On a node where more than one person
+runs it, point these at your own paths:
+
+```bash
+DAQ_ALERT_LOG_FILE=~/daq_alert.log DAQ_ALERT_PID_FILE=~/daq_alert.pid mu2edaq-bigredbox
+```
 
 ## Dismissing an alert
 

@@ -335,6 +335,134 @@ def test_history_dialog_survives_non_string_fields(app, qtbot):
     assert "1 message(s)" in dialog.windowTitle()
 
 
+def test_history_dialog_survives_update_while_open(app, qtbot):
+    """Regression for #11: the reference must survive an alert arriving.
+
+    The dialog used to be closed and reopened; the old one's deferred
+    destroyed signal then cleared the reference to the new dialog, so clicking
+    the counter opened duplicates.
+    """
+    window = AlertWindow(MESSAGE)
+    qtbot.addWidget(window)
+
+    window._show_history()
+    dialog = window._history_dialog
+    assert dialog is not None
+
+    window.update_message({**MESSAGE, "message": "second"})
+    app.processEvents()
+    app.processEvents()
+
+    assert window._history_dialog is dialog, "reference was clobbered"
+    assert "2 message(s)" in dialog.windowTitle(), "dialog did not refresh"
+
+    # Clicking the counter again must raise the existing dialog, not open a new one.
+    window._show_history()
+    assert window._history_dialog is dialog
+
+
+def test_history_dialog_refresh_rebuilds_entries(app, qtbot):
+    dialog = HistoryDialog([MESSAGE])
+    qtbot.addWidget(dialog)
+    assert "1 message(s)" in dialog.windowTitle()
+
+    dialog.refresh([MESSAGE, {**MESSAGE, "system_id": "B"}, {**MESSAGE, "system_id": "C"}])
+
+    assert "3 message(s)" in dialog.windowTitle()
+    assert dialog._title_lbl.text() == dialog.windowTitle()
+
+
+def test_closing_history_dialog_clears_the_reference(app, qtbot):
+    window = AlertWindow(MESSAGE)
+    qtbot.addWidget(window)
+    window._show_history()
+    dialog = window._history_dialog
+
+    dialog.close()
+    app.processEvents()
+    app.processEvents()
+
+    assert window._history_dialog is None
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("37031", 37031),
+    ("", 37020),            # exported but blank -- the crs-app case, #12
+    (None, 37020),          # unset
+    ("  37031  ", 37031),   # whitespace tolerated
+    ("auto", 37020),        # non-numeric
+    ("0", 37020),           # out of range
+    ("70000", 37020),       # out of range
+    ("-5", 37020),          # out of range
+])
+def test_port_parsing_never_raises(value, expected):
+    """Regression for #12: a bad CRS_PORT_UDP must not crash at import."""
+    from mu2edaq_bigredbox.config import _port
+
+    assert _port(value) == expected
+
+
+def test_bad_crs_port_udp_does_not_crash_import():
+    """End-to-end for #12: importing with a blank value used to raise."""
+    import subprocess
+    import sys as _sys
+
+    result = subprocess.run(
+        [_sys.executable, "-c",
+         "import mu2edaq_bigredbox.config as c; print(c.BROADCAST_PORT)"],
+        env=dict(os.environ, CRS_PORT_UDP=""),
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "37020"
+
+
+def test_log_and_pid_paths_are_overridable(tmp_path):
+    """#13: fixed /tmp paths are shared by every user on a node."""
+    import subprocess
+    import sys as _sys
+
+    log_file = tmp_path / "custom.log"
+    pid_file = tmp_path / "custom.pid"
+    result = subprocess.run(
+        [_sys.executable, "-c",
+         "import mu2edaq_bigredbox.config as c; print(c.LOG_FILE); print(c.PID_FILE)"],
+        env=dict(os.environ,
+                 DAQ_ALERT_LOG_FILE=str(log_file),
+                 DAQ_ALERT_PID_FILE=str(pid_file)),
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == [str(log_file), str(pid_file)]
+
+
+@pytest.mark.skipif(getattr(os, "geteuid", lambda: 1)() == 0,
+                    reason="root bypasses file permissions")
+def test_unwritable_log_falls_back_to_stderr(tmp_path):
+    """Regression for #13: an unwritable log used to kill the import."""
+    import subprocess
+    import sys as _sys
+
+    unwritable = tmp_path / "locked.log"
+    unwritable.write_text("")
+    unwritable.chmod(0o000)
+    try:
+        result = subprocess.run(
+            [_sys.executable, "-c",
+             "import mu2edaq_bigredbox.daq_alert as d; print('imported ok')"],
+            env=dict(os.environ,
+                     DAQ_ALERT_LOG_FILE=str(unwritable),
+                     QT_QPA_PLATFORM="offscreen"),
+            capture_output=True, text=True, timeout=60,
+        )
+    finally:
+        unwritable.chmod(0o644)
+
+    assert result.returncode == 0, result.stderr
+    assert "imported ok" in result.stdout
+    assert "logging to stderr instead" in result.stderr
+
+
 def test_field_text_coercion():
     from mu2edaq_bigredbox.daq_alert import field_text
 

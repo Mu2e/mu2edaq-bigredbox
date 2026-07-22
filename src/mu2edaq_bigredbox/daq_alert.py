@@ -27,12 +27,27 @@ from . import __version__
 from .config import BROADCAST_PORT, PID_FILE, LOG_FILE, MESSAGE_RATE_LIMIT, MAX_ALERT_WINDOWS
 
 
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+
+try:
+    logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
+                        format=_LOG_FORMAT)
+    _log_fallback = None
+except OSError as _exc:
+    # The default log path lives in /tmp and is shared by every user on the
+    # machine, so it is routinely owned by whoever started the listener first.
+    # Losing the log must not stop DAQ alerting: fall back to stderr and say
+    # why, rather than dying at import with a bare PermissionError.
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO,
+                        format=_LOG_FORMAT)
+    _log_fallback = _exc
+
 log = logging.getLogger(__name__)
+
+if _log_fallback is not None:
+    log.warning("Cannot write %s (%s); logging to stderr instead. "
+                "Set DAQ_ALERT_LOG_FILE to choose another path.",
+                LOG_FILE, _log_fallback)
 
 
 # Exit status used when the UDP port is already taken, i.e. another listener
@@ -425,10 +440,9 @@ class AlertWindow(QWidget):
             field_text(data, "message", "(no message text)"))
         self._error_count += 1
         self._counter_lbl.setText(f"Errors Received:  {self._error_count}")
-        # Refresh the open history dialog if it is visible
+        # Update the open history dialog in place if it is visible
         if self._history_dialog is not None:
-            self._history_dialog.close()
-            self._open_history_dialog()
+            self._history_dialog.refresh(self._history)
         self.raise_()
         self.activateWindow()
 
@@ -440,10 +454,20 @@ class AlertWindow(QWidget):
         self._open_history_dialog()
 
     def _open_history_dialog(self):
-        self._history_dialog = HistoryDialog(self._history, parent=self)
-        self._history_dialog.destroyed.connect(lambda: setattr(self, "_history_dialog", None))
-        self._history_dialog.show()
-        self._history_dialog.raise_()
+        dialog = HistoryDialog(self._history, parent=self)
+        self._history_dialog = dialog
+        # Clear the reference only if it still points at *this* dialog: widget
+        # deletion is deferred, so a stale destroyed signal must not wipe out a
+        # newer dialog. Bound as a default argument so the slot never touches a
+        # cleared closure cell.
+        dialog.destroyed.connect(lambda *_, d=dialog: self._forget_history_dialog(d))
+        dialog.show()
+        dialog.raise_()
+
+    def _forget_history_dialog(self, dialog):
+        """Runs as a Qt slot during widget destruction; must never raise."""
+        if self._history_dialog is dialog:
+            self._history_dialog = None
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Space):
@@ -472,10 +496,10 @@ class HistoryDialog(QWidget):
         header.setStyleSheet(f"background-color: {CLR_PANEL}; border-bottom: 1px solid {CLR_DIVIDER};")
         hdr_layout = QHBoxLayout(header)
         hdr_layout.setContentsMargins(32, 0, 32, 0)
-        title_lbl = QLabel(f"Error History  —  {len(history)} message(s)")
-        title_lbl.setFont(QFont("Arial", 15, QFont.Weight.Bold))
-        title_lbl.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
-        hdr_layout.addWidget(title_lbl)
+        self._title_lbl = QLabel()
+        self._title_lbl.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet(f"color: {CLR_TEXT}; background: transparent;")
+        hdr_layout.addWidget(self._title_lbl)
         layout.addWidget(header)
 
         # Scrollable entries (newest first)
@@ -485,16 +509,35 @@ class HistoryDialog(QWidget):
 
         container = QWidget()
         container.setStyleSheet(f"background: {CLR_BG};")
-        c_layout = QVBoxLayout(container)
-        c_layout.setContentsMargins(32, 24, 32, 24)
-        c_layout.setSpacing(12)
-
-        for idx, msg in enumerate(reversed(history), 1):
-            c_layout.addWidget(self._make_entry(len(history) - idx + 1, msg))
-
-        c_layout.addStretch()
+        self._entry_layout = QVBoxLayout(container)
+        self._entry_layout.setContentsMargins(32, 24, 32, 24)
+        self._entry_layout.setSpacing(12)
         scroll.setWidget(container)
         layout.addWidget(scroll)
+
+        self.refresh(history)
+
+    def refresh(self, history: list):
+        """Rebuild the entry list in place for an updated history.
+
+        Updating the open dialog avoids closing and reopening it, which reset
+        the window position and scroll offset — and raced with the old
+        dialog's destroyed signal, clearing the reference to the new one.
+        """
+        title = f"Error History  —  {len(history)} message(s)"
+        self.setWindowTitle(title)
+        self._title_lbl.setText(title)
+
+        while self._entry_layout.count():
+            item = self._entry_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        for idx, msg in enumerate(reversed(history), 1):
+            self._entry_layout.addWidget(
+                self._make_entry(len(history) - idx + 1, msg))
+        self._entry_layout.addStretch()
 
     def _make_entry(self, index: int, data: dict) -> QWidget:
         entry = QWidget()
@@ -590,8 +633,22 @@ class DAQAlertApp:
         log.info("DAQ Alert application started (PID %d)", os.getpid())
 
     def _write_pid(self):
-        with open(PID_FILE, "w") as fh:
-            fh.write(str(os.getpid()))
+        """Record the pid, but never let a bookkeeping file stop alerting.
+
+        We already own the UDP port by this point, so this process *is* the
+        listener.  If the pid file is unwritable (typically another operator's
+        file in /tmp) carry on without it: stop-mu2edaq-bigredbox.sh falls back
+        to the process holding the port, so the daemon can still be stopped.
+        """
+        try:
+            with open(PID_FILE, "w") as fh:
+                fh.write(str(os.getpid()))
+        except OSError as exc:
+            log.error("Cannot write pid file %s (%s); continuing without it. "
+                      "Set DAQ_ALERT_PID_FILE to choose another path.",
+                      PID_FILE, exc)
+            print("warning: cannot write pid file %s: %s" % (PID_FILE, exc),
+                  file=sys.stderr)
 
     @property
     def is_paused(self) -> bool:
@@ -668,6 +725,10 @@ class DAQAlertApp:
             os.remove(PID_FILE)
         except FileNotFoundError:
             pass
+        except OSError as exc:
+            # Runs during shutdown; a permission problem here must not turn a
+            # clean exit into a traceback.
+            log.warning("Could not remove pid file %s: %s", PID_FILE, exc)
 
     def run(self) -> int:
         exit_code = self.app.exec()

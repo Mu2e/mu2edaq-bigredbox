@@ -75,6 +75,14 @@ app. The test suite does not — it renders offscreen.
 **Entry points:** `mu2edaq-bigredbox` (listener, also `python -m mu2edaq_bigredbox`)
 and `mu2edaq-bigredbox-send` (test sender).
 
+**Config parsing:** `config.py` is imported before logging is configured, so
+it must never raise. `_port()` and `_path()` fall back to defaults with a
+warning for blank/invalid values — a malformed `CRS_PORT_UDP` from `apps.yaml`
+must not stop the listener. Paths are overridable via `DAQ_ALERT_LOG_FILE` /
+`DAQ_ALERT_PID_FILE`; the `/tmp` defaults are shared by every user on a node.
+Logging setup and the pid write are both non-fatal on `OSError` for the same
+reason: alerting availability beats bookkeeping.
+
 **Pause semantics:** Pause is global, not per-window. `DAQAlertApp.is_paused`
 is true when *any* open window has it ticked, and `_show_alert()` returns early
 in that case — before the rate limiter, so a paused period does not consume the
