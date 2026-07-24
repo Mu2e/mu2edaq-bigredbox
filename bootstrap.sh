@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bootstrap.sh -- set up the Python virtual environment for mu2edaq-bigredbox
-# (the PyQt5 DAQ alert daemon) and install/update its dependencies.
+# (the PyQt6 DAQ alert daemon) and install/update its dependencies.
 #
 # Usage: ./bootstrap.sh [--dev]
 #

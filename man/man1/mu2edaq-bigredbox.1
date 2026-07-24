@@ -1,4 +1,4 @@
-.TH MU2EDAQ-BIGREDBOX 1 "2026-07-22" "mu2edaq-bigredbox 1.1.0" "Mu2e DAQ Manual"
+.TH MU2EDAQ-BIGREDBOX 1 "2026-07-22" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
 .SH NAME
 mu2edaq\-bigredbox \- Mu2e DAQ critical alert listener ("Big Red Box")
 .SH SYNOPSIS
@@ -8,7 +8,7 @@ mu2edaq\-bigredbox \- Mu2e DAQ critical alert listener ("Big Red Box")
 .SH DESCRIPTION
 .B mu2edaq\-bigredbox
 listens for JSON critical\-error alerts broadcast over UDP by Mu2e DAQ
-systems and displays a prominent always\-on\-top PyQt5 alert window for
+systems and displays a prominent always\-on\-top PyQt6 alert window for
 each one.  It is normally started as a background daemon by the control
 room via
 .BR crs-app (1)
@@ -27,6 +27,30 @@ package is installed, the listener advertises itself as service
 so it appears in
 .BR mu2edaq\-discover (1)
 scans.  Its absence is not an error.
+.SH DISCOVERY RESPONSE
+In reply to a DISCOVER request the listener announces its package version in
+the
+.B version
+field and the runtime detail below under
+.BR meta ,
+so an operator can confirm what is deployed on a node without logging into it:
+.PP
+.RS 4
+.nf
+{"app": "bigredbox", "name": "Big Red Box Alerts",
+ "port": 37020, "scheme": "udp", "version": "2.0.0",
+ "meta": {"version": "2.0.0", "qt": "6.11.0", "pyqt": "6.11.0",
+          "python": "3.12.1", "udp_port": "37020"}}
+.fi
+.RE
+.PP
+Query it with:
+.PP
+.RS 4
+.nf
+mu2edaq\-discover \-\-filter app=bigredbox \-\-json
+.fi
+.RE
 .SH PAYLOAD FORMAT
 Alerts are UTF\-8 JSON datagrams:
 .PP
@@ -42,7 +66,26 @@ Alerts are UTF\-8 JSON datagrams:
 .B CRS_PORT_UDP
 UDP port to listen on.  Exported by the control room from
 .IR apps.yaml .
-Takes precedence over the built\-in default of 37020.
+Takes precedence over the built\-in default of 37020.  A blank, non\-numeric
+or out\-of\-range value is ignored with a warning and the default is used,
+so a malformed
+.I apps.yaml
+entry cannot stop the listener starting.
+.TP
+.B DAQ_ALERT_LOG_FILE
+Log file path.  Defaults to
+.IR /tmp/daq_alert.log ,
+which is shared by every user on the machine; set this when more than one
+operator runs the listener on the same node.  If the log cannot be opened the
+program logs to standard error instead of failing.
+.TP
+.B DAQ_ALERT_PID_FILE
+PID file path.  Defaults to
+.IR /tmp/daq_alert.pid .
+If it cannot be written the listener carries on without it \(em it already
+owns the UDP port, and
+.B stop\-mu2edaq\-bigredbox.sh
+can still find it by port.
 .TP
 .B DISPLAY
 X11 display to open alert windows on.  Required on Linux.
@@ -58,7 +101,32 @@ Application log.
 .B SIGTERM ", " SIGINT
 Stop the UDP listener, remove the PID file and exit cleanly.
 .SH EXIT STATUS
-Returns the Qt event loop exit code; 0 on a clean shutdown.
+.TP
+.B 0
+Clean shutdown (the Qt event loop's exit code).
+.TP
+.B 3
+The UDP port is already in use, meaning another listener is running.  The
+program refuses to start a second instance and exits immediately.
+.SH PAUSING ALERTS
+Each alert window carries a
+.B Pause
+checkbox.  While it is ticked the application stops processing incoming alerts
+altogether: no new windows open and no open window is updated.  Suppressed
+alerts are dropped, not queued, and each one is recorded in the log.
+.PP
+Pause is global rather than per\-window \(em ticking it on one window
+suppresses alerts for all of them.  Processing resumes as soon as no open
+window has it ticked, either by unticking it or by closing that window.
+.SH SINGLE INSTANCE
+Only one listener may own the UDP port at a time.  The port is bound before
+the PID file is written, so the binding \(em not the PID file \(em is what
+decides which process is the live listener.  A second invocation exits with
+status 3 rather than running on with a dead listener thread.
+.PP
+.B stop\-mu2edaq\-bigredbox.sh
+falls back to the process holding the UDP port when the PID file is missing,
+so a listener started by hand can still be stopped.
 .SH EXAMPLES
 Run in the foreground:
 .PP

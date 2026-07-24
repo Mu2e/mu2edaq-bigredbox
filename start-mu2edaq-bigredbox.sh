@@ -27,6 +27,33 @@ rm -f "$PID_FILE"
 PY=python3
 [[ -x ./venv/bin/python ]] && PY=./venv/bin/python
 
+# The pid file only knows about listeners this script started. A listener
+# launched by hand, or one orphaned when the pid file was deleted, is invisible
+# to the check above -- but it still owns the UDP port. Ask the port itself,
+# which is the authoritative answer. (The app repeats this check when it binds,
+# so the small race between here and launch is covered.)
+if ! "$PY" - "$CRS_PORT_UDP" <<'PYEOF'
+import socket, sys
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    sock.bind(("", int(sys.argv[1])))
+except OSError:
+    sys.exit(1)
+finally:
+    sock.close()
+PYEOF
+then
+  echo "error: UDP port $CRS_PORT_UDP is already in use -- a DAQ Alert listener" >&2
+  echo "       is already running (its pid file may have been removed)." >&2
+  if command -v lsof >/dev/null 2>&1; then
+    echo "       holder:" >&2
+    lsof -nP -iUDP:"$CRS_PORT_UDP" >&2 || true
+  fi
+  echo "       stop it with ./stop-mu2edaq-bigredbox.sh, or kill the pid above." >&2
+  exit 1
+fi
+
 # Prefer the installed console-script entry point; fall back to the checkout
 # shim when the package has not been installed (see bootstrap.sh).
 if [[ -x ./venv/bin/mu2edaq-bigredbox ]]; then
@@ -43,6 +70,7 @@ bgpid=$!
 sleep 1
 if ! kill -0 "$bgpid" 2>/dev/null; then
   echo "error: DAQ Alert listener failed to start; see $LOG_FILE" >&2
+  tail -n 3 "$LOG_FILE" >&2 2>/dev/null || true
   exit 1
 fi
 echo "DAQ Alert listener started (PID $bgpid); log: $LOG_FILE"
