@@ -9,12 +9,17 @@ and leave the operator with a bare traceback.
 
 import logging
 import os
+import tempfile
 
 log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 37020
-DEFAULT_PID_FILE = "/tmp/daq_alert.pid"
-DEFAULT_LOG_FILE = "/tmp/daq_alert.log"
+# Use the platform temp dir so the defaults are valid on every OS. On POSIX
+# gettempdir() is normally "/tmp" (honouring $TMPDIR), preserving the previous
+# behaviour; on Windows it resolves to %TEMP% instead of a nonexistent /tmp.
+_TMPDIR = tempfile.gettempdir()
+DEFAULT_PID_FILE = os.path.join(_TMPDIR, "daq_alert.pid")
+DEFAULT_LOG_FILE = os.path.join(_TMPDIR, "daq_alert.log")
 
 
 def _port(value, default=DEFAULT_PORT, source="CRS_PORT_UDP"):
