@@ -142,7 +142,16 @@ class UDPListenerThread(QThread):
         self._running = True
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Single-instance invariant: a second bind to a busy port must raise so
+        # DAQAlertApp can exit with EXIT_PORT_IN_USE. On Windows, SO_REUSEADDR
+        # lets multiple sockets share the same port (unlike POSIX), which
+        # silently defeats that check; SO_EXCLUSIVEADDRUSE restores "first bind
+        # wins, second raises". Keep SO_REUSEADDR on POSIX for prompt rebinding
+        # after restart (TIME_WAIT).
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self._sock.settimeout(1.0)
         try:
