@@ -24,6 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "PyQt6>=6.4",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]

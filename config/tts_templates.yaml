@@ -1,0 +1,21 @@
+# Text-to-speech templates for mu2edaq-bigredbox.
+#
+# Maps a system_id glob pattern to the text spoken when a matching alert
+# arrives. Placeholders {system_id}, {timestamp}, and {message} are filled
+# in from the alert payload (see the PAYLOAD FORMAT section of
+# `man mu2edaq-bigredbox`).
+#
+# Patterns are matched in the order they appear below (fnmatch glob syntax,
+# e.g. "DAQ-NODE-*"); the first match wins. The special "default" key is
+# used when no pattern matches, or when this file is absent/unreadable --
+# though in that case the listener's own built-in DEFAULT_TTS_TEMPLATE is
+# used instead of this file's default.
+#
+# Path is overridable with DAQ_ALERT_TTS_TEMPLATE_FILE; see
+# `man mu2edaq-bigredbox` for the full list of DAQ_ALERT_TTS_* variables.
+
+default: "Critical error on {system_id}. {message}"
+
+"DAQ-NODE-*": "Attention. Node {system_id} reports a critical error. {message}"
+
+"CFO*": "C. F. O. {system_id} has a critical error. {message}"

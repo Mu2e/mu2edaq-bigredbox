@@ -1,6 +1,10 @@
 # Runtime dependencies. These mirror [project.dependencies] in pyproject.toml;
 # the supported install is `pip install .` (or `pip install -e .` for dev).
+# QtTextToSpeech (used for spoken alert reading) ships inside the PyQt6
+# wheel itself -- no separate addon package needed.
 PyQt6>=6.4
+# Text-to-speech alert templates (config/tts_templates.yaml).
+PyYAML>=6.0
 # Mu2e DAQ service discovery (stdlib-only; from the sibling submodule).
 # Optional -- also available as the `discovery` extra.
 mu2edaq-discovery

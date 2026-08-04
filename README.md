@@ -24,12 +24,17 @@ This is written using Qt6 (PyQt6) so it's portable. C, C++, and Python sender li
 - Has a **Pause** box that suppresses all incoming alerts while ticked — no
   new windows open and no open window updates (see *Pausing alerts* below)
 - Has a history of **Errors Received** and a counter which can open up a history so you can see what is going wrong.
+- Reads each alert aloud via Qt's `QTextToSpeech`, with the spoken text
+  driven by configurable per-`system_id` templates (see *Text-to-speech*
+  below), and a **Mute Audio** box to silence it without hiding the window
 - Runs as a background daemon with PID and log file management
 
 ## Requirements
 
 - Python 3.9+
 - PyQt6 (Qt 6.4 or later) — installed automatically as a dependency
+- PyYAML — installed automatically as a dependency, used for the optional
+  text-to-speech templates file
 - A display environment (X11 / `DISPLAY` variable set)
 
 This does work with ssh forwarded X11 connections.
@@ -40,6 +45,14 @@ This does work with ssh forwarded X11 connections.
 > code uses no API introduced after 6.4. On Linux, Qt6 needs the
 > usual X11 client libraries (`libxkbcommon-x11`, `libEGL`, `xcb-cursor`); on
 > RHEL/AlmaLinux install `libxkbcommon-x11 xcb-util-cursor mesa-libEGL`.
+
+> **Text-to-speech note.** `QTextToSpeech` ships inside the `PyQt6` wheel
+> itself — no extra pip package is needed. The Qt plugin still needs a
+> working platform speech backend at the OS level: macOS (`AVSpeechSynthesizer`)
+> and Windows (SAPI) have one built in; on Linux install `speech-dispatcher`
+> or `flite` (e.g. `apt install speech-dispatcher` / `dnf install flite`).
+> Without one, TTS degrades to silence with a warning in the log — see
+> *Text-to-speech* below.
 
 ## Install
 
@@ -178,11 +191,14 @@ UDPListenerThread   ← background QThread, emits message_received signal
 | `pyproject.toml` | Package build (setuptools, `src/` layout, console scripts, man pages) |
 | `src/mu2edaq_bigredbox/daq_alert.py` | Main application: UDP listener thread, alert window GUI, daemon lifecycle |
 | `src/mu2edaq_bigredbox/demo_sender.py` | Test utility to send mock alert messages |
-| `src/mu2edaq_bigredbox/config.py` | Shared constants (`BROADCAST_PORT`, `MESSAGE_RATE_LIMIT`, `MAX_ALERT_WINDOWS`, log/PID paths) |
+| `src/mu2edaq_bigredbox/config.py` | Shared constants (`BROADCAST_PORT`, `MESSAGE_RATE_LIMIT`, `MAX_ALERT_WINDOWS`, log/PID paths, `TTS_*`) |
+| `src/mu2edaq_bigredbox/tts.py` | Text-to-speech: `QTextToSpeech` wrapper, YAML template loading/rendering |
 | `daq_alert.py`, `demo_sender.py` | Root-level compatibility shims for running from a checkout |
+| `config/tts_templates.yaml` | Example/default text-to-speech templates |
 | `man/man1/` | Man pages for both console scripts |
 | `tests/test_packaging.py` | pytest checks for the package build and the UDP payload |
 | `tests/test_gui.py` | Headless PyQt6 widget tests (offscreen platform) |
+| `tests/test_tts.py` | Text-to-speech template rendering and `TTSSpeaker` tests (fake engine, no real audio) |
 | `bootstrap.sh` | Create `venv/` and install the package |
 | `start_daq_alert.sh` | Start the daemon in the background |
 | `stop_daq_alert.sh` | Stop the running daemon |
@@ -201,6 +217,12 @@ Edit `src/mu2edaq_bigredbox/config.py` to change defaults:
 | `MAX_ALERT_WINDOWS` | `2` | Max simultaneous alert windows |
 | `LOG_FILE` | `/tmp/daq_alert.log` | Daemon log path (overridden by `DAQ_ALERT_LOG_FILE`) |
 | `PID_FILE` | `/tmp/daq_alert.pid` | Daemon PID file path (overridden by `DAQ_ALERT_PID_FILE`) |
+| `TTS_ENABLED` | `True` | Whether alerts are read aloud (overridden by `DAQ_ALERT_TTS_ENABLED`) |
+| `TTS_RATE` | `None` (engine default) | Speech rate, -1.0 to 1.0 (overridden by `DAQ_ALERT_TTS_RATE`) |
+| `TTS_VOLUME` | `None` (engine default) | Speech volume, 0.0 to 1.0 (overridden by `DAQ_ALERT_TTS_VOLUME`) |
+| `TTS_VOICE` | `None` (engine default) | Voice name substring match (overridden by `DAQ_ALERT_TTS_VOICE`) |
+| `TTS_ENGINE` | `None` (auto) | Force a specific Qt TTS plugin (overridden by `DAQ_ALERT_TTS_ENGINE`) |
+| `TTS_TEMPLATE_FILE` | `config/tts_templates.yaml` | Spoken-text templates (overridden by `DAQ_ALERT_TTS_TEMPLATE_FILE`) |
 
 ## Pausing alerts
 
@@ -218,6 +240,37 @@ interrupting me", so ticking it on one window suppresses alerts for all of
 them. Processing resumes as soon as no open window has Pause ticked — untick
 it, or close the paused window.
 
+## Text-to-speech
+
+Each accepted alert (after the pause and rate-limit checks) is read aloud via
+Qt's `QTextToSpeech`, using a template chosen by the alert's `system_id`.
+Templates live in a YAML file, `config/tts_templates.yaml` by default
+(override with `DAQ_ALERT_TTS_TEMPLATE_FILE`):
+
+```yaml
+default: "Critical error on {system_id}. {message}"
+"DAQ-NODE-*": "Attention. Node {system_id} reports a critical error. {message}"
+"CFO*": "Central fanout controller {system_id} has a critical error. {message}"
+```
+
+Patterns are `fnmatch` globs, matched in file order — first match wins. The
+`default` key is used when nothing else matches. `{system_id}`, `{timestamp}`,
+and `{message}` are filled in from the alert payload. A missing template
+file, missing PyYAML, malformed YAML, or a malformed template string (a bad
+placeholder) all fall back to the listener's built-in default template with a
+warning in the log — they never stop an alert from being spoken or the
+listener from starting.
+
+Each alert window also has a **Mute Audio** box, independent of Pause: while
+ticked it silences speech only — the window itself still opens and updates
+normally. Like Pause, muting is global across open windows and resumes as
+soon as no open window has it ticked.
+
+Rate, volume, voice, and which Qt speech plugin to use are all configured via
+the `DAQ_ALERT_TTS_*` environment variables in *Environment overrides* below;
+there is no command-line flag for any of it (see the Configuration table
+above for the matching `config.py` constants).
+
 ### Environment overrides
 
 | Variable | Overrides | Notes |
@@ -225,6 +278,12 @@ it, or close the paused window.
 | `CRS_PORT_UDP` | `BROADCAST_PORT` | Exported by the control room's `crs-app`. A blank, non-numeric or out-of-range value falls back to 37020 with a warning rather than failing to start |
 | `DAQ_ALERT_LOG_FILE` | `LOG_FILE` | Falls back to stderr if the file cannot be opened |
 | `DAQ_ALERT_PID_FILE` | `PID_FILE` | The listener keeps running if it cannot be written |
+| `DAQ_ALERT_TTS_ENABLED` | `TTS_ENABLED` | 1/0, true/false, yes/no, on/off (case-insensitive); unrecognized falls back to `True` |
+| `DAQ_ALERT_TTS_RATE` | `TTS_RATE` | Out-of-range or non-numeric falls back to the engine default |
+| `DAQ_ALERT_TTS_VOLUME` | `TTS_VOLUME` | Out-of-range or non-numeric falls back to the engine default |
+| `DAQ_ALERT_TTS_VOICE` | `TTS_VOICE` | No match found falls back to the engine's default voice |
+| `DAQ_ALERT_TTS_ENGINE` | `TTS_ENGINE` | An unsupported plugin name disables TTS rather than crashing |
+| `DAQ_ALERT_TTS_TEMPLATE_FILE` | `TTS_TEMPLATE_FILE` | Missing/unreadable/malformed falls back to the built-in default template |
 
 The default `/tmp` paths are shared by every user on a machine, so the first
 operator to start the listener owns them. On a node where more than one person

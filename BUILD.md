@@ -14,8 +14,16 @@ This repository contains two independently buildable components:
 ### Requirements
 
 - Python 3.9 or later
-- PyQt6 (Qt 6.4+), pulled in automatically by the install
+- PyQt6 (Qt 6.4+), pulled in automatically by the install — this includes
+  `QtTextToSpeech`, used for spoken alert reading; no separate addon package
+  is needed
+- PyYAML, pulled in automatically by the install — used for the optional
+  text-to-speech templates file
 - A running X11/Wayland display (`DISPLAY` must be set)
+- For text-to-speech on Linux: a system speech backend such as
+  `speech-dispatcher` or `flite` (macOS and Windows have one built in).
+  Without it, TTS degrades to silence with a warning in the log rather than
+  blocking startup.
 
 The GUI uses **Qt6 via PyQt6**; there is no remaining Qt5 dependency. PyQt6
 6.10 and later require Python 3.10+, so a Python 3.9 environment resolves to
@@ -60,12 +68,16 @@ src/mu2edaq_bigredbox/
 ├── __main__.py        # python -m mu2edaq_bigredbox
 ├── config.py
 ├── daq_alert.py
-└── demo_sender.py
+├── demo_sender.py
+└── tts.py              # QTextToSpeech wrapper, YAML template loading/rendering
+config/
+└── tts_templates.yaml  # example/default text-to-speech templates
 man/man1/*.1
 tests/
 ├── conftest.py        # forces QT_QPA_PLATFORM=offscreen
 ├── test_packaging.py
-└── test_gui.py        # headless PyQt6 widget tests
+├── test_gui.py         # headless PyQt6 widget tests
+└── test_tts.py         # template rendering + TTSSpeaker tests (fake engine)
 ```
 
 ### Building distributions
@@ -116,7 +128,8 @@ pytest
 | File | Covers |
 |---|---|
 | `tests/test_packaging.py` | Package metadata, `CRS_PORT_UDP` override, UDP payload format, console-script registration |
-| `tests/test_gui.py` | PyQt6 widget construction, alert update/counter, pause checkbox, history dialog, key handling, listener thread lifecycle |
+| `tests/test_gui.py` | PyQt6 widget construction, alert update/counter, pause/mute checkboxes, history dialog, key handling, listener thread lifecycle, `_bool`/`_float`/`_port` config parsing |
+| `tests/test_tts.py` | `render_template`/`load_templates` (glob matching, YAML fallback behaviour), `TTSSpeaker` against a fake `QTextToSpeech` (no real audio/speech plugin required) |
 
 The GUI tests run headless: `tests/conftest.py` sets
 `QT_QPA_PLATFORM=offscreen` before Qt is imported, and `pyproject.toml` pins
@@ -171,6 +184,9 @@ are the changes the daemon required:
 
 The signal/slot API (`pyqtSignal`, `connect`), `QThread` subclassing, and the
 stylesheet strings needed no changes.
+
+`tts.py` is new code, not a migration, but follows the same scoped-enum
+convention: `QTextToSpeech.State.Error`, not a bare `Error`.
 
 ### Windows and macOS
 

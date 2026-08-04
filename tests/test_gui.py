@@ -95,6 +95,15 @@ def test_alert_window_pause_checkbox(app, qtbot):
     assert window.is_paused is True
 
 
+def test_alert_window_mute_checkbox(app, qtbot):
+    window = AlertWindow(MESSAGE)
+    qtbot.addWidget(window)
+
+    assert window.is_muted is False
+    window._mute_cb.setChecked(True)
+    assert window.is_muted is True
+
+
 def test_history_dialog_lists_entries(app, qtbot):
     dialog = HistoryDialog([MESSAGE, {**MESSAGE, "system_id": "DAQ-NODE-02"}])
     qtbot.addWidget(dialog)
@@ -172,13 +181,21 @@ class _StubApp:
         from mu2edaq_bigredbox.daq_alert import DAQAlertApp
         self._windows = []
         self._last_accepted_time = 0.0
+        self._tts = None            # no engine: _speak_alert is a no-op
+        self._tts_templates = {}
         self._show_alert = DAQAlertApp._show_alert.__get__(self)
+        self._speak_alert = DAQAlertApp._speak_alert.__get__(self)
         self._cls = DAQAlertApp
 
     @property
     def is_paused(self):
         from mu2edaq_bigredbox.daq_alert import DAQAlertApp
         return DAQAlertApp.is_paused.fget(self)
+
+    @property
+    def is_muted(self):
+        from mu2edaq_bigredbox.daq_alert import DAQAlertApp
+        return DAQAlertApp.is_muted.fget(self)
 
 
 @pytest.fixture
@@ -260,6 +277,29 @@ def test_closing_the_paused_window_resumes_processing(dispatcher, app):
 
     _send(dispatcher, {**MESSAGE, "message": "after the paused window closed"})
     assert len(dispatcher._windows) == 1
+
+
+def test_mute_is_global_across_windows(dispatcher):
+    """Muting any one window silences speech for all of them, like pause."""
+    _send(dispatcher)
+    _send(dispatcher, {**MESSAGE, "message": "second"})
+    assert len(dispatcher._windows) == 2
+    assert dispatcher.is_muted is False
+
+    dispatcher._windows[0]._mute_cb.setChecked(True)   # mute only the first
+    assert dispatcher.is_muted is True
+
+
+def test_mute_does_not_suppress_the_visual_window(dispatcher):
+    """Mute only silences speech -- the alert window still opens/updates."""
+    _send(dispatcher)
+    dispatcher._windows[0]._mute_cb.setChecked(True)
+
+    _send(dispatcher, {**MESSAGE, "message": "arrived while muted"})
+
+    assert len(dispatcher._windows) == 2, "mute must not suppress new windows"
+    assert dispatcher._windows[1]._message_row.value_label.text() == \
+        "arrived while muted"
 
 
 def test_listener_ignores_malformed_payloads(app, qtbot):
@@ -400,6 +440,62 @@ def test_port_parsing_never_raises(value, expected):
     from mu2edaq_bigredbox.config import _port
 
     assert _port(value) == expected
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("1", True),
+    ("true", True),
+    ("True", True),
+    ("yes", True),
+    ("on", True),
+    ("0", False),
+    ("false", False),
+    ("no", False),
+    ("off", False),
+    ("", None),           # blank -- falls back to the passed default
+    (None, None),          # unset
+    ("banana", None),      # unrecognized
+])
+def test_bool_parsing_never_raises(value, expected):
+    from mu2edaq_bigredbox.config import _bool
+
+    assert _bool(value, None, "TEST_VAR") == expected
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("0.5", 0.5),
+    ("-1.0", -1.0),
+    ("1.0", 1.0),
+    ("  0.25  ", 0.25),   # whitespace tolerated
+    ("", None),            # blank -- falls back to default
+    (None, None),          # unset
+    ("nope", None),        # non-numeric
+    ("2.0", None),         # out of range
+    ("-2.0", None),        # out of range
+])
+def test_float_parsing_never_raises(value, expected):
+    from mu2edaq_bigredbox.config import _float
+
+    assert _float(value, None, -1.0, 1.0, "TEST_VAR") == expected
+
+
+def test_bad_tts_env_vars_do_not_crash_import():
+    """A malformed DAQ_ALERT_TTS_* value must fall back, not raise."""
+    import subprocess
+    import sys as _sys
+
+    result = subprocess.run(
+        [_sys.executable, "-c",
+         "import mu2edaq_bigredbox.config as c; "
+         "print(c.TTS_ENABLED); print(c.TTS_RATE); print(c.TTS_VOLUME)"],
+        env=dict(os.environ,
+                 DAQ_ALERT_TTS_ENABLED="not-a-bool",
+                 DAQ_ALERT_TTS_RATE="way too fast",
+                 DAQ_ALERT_TTS_VOLUME="11"),
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["True", "None", "None"]
 
 
 def test_bad_crs_port_udp_does_not_crash_import():

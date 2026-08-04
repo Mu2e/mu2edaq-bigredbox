@@ -24,7 +24,12 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QT_VERSION_STR, PYQT_V
 from PyQt6.QtGui import QFont, QColor, QLinearGradient, QPainter, QBrush
 
 from . import __version__
-from .config import BROADCAST_PORT, PID_FILE, LOG_FILE, MESSAGE_RATE_LIMIT, MAX_ALERT_WINDOWS
+from .config import (
+    BROADCAST_PORT, PID_FILE, LOG_FILE, MESSAGE_RATE_LIMIT, MAX_ALERT_WINDOWS,
+    TTS_ENABLED, TTS_RATE, TTS_VOLUME, TTS_VOICE, TTS_ENGINE,
+    TTS_TEMPLATE_FILE,
+)
+from .tts import TTSSpeaker, load_templates, render_template
 
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
@@ -362,6 +367,15 @@ class AlertWindow(QWidget):
             }}
         """)
 
+        self._mute_cb = QCheckBox("Mute Audio")
+        self._mute_cb.setFont(QFont("Arial", 11))
+        self._mute_cb.setToolTip(
+            "Silence text-to-speech alert reading while ticked -- the "
+            "visual alert window still opens and updates as normal. "
+            "Untick, or close this window, to resume."
+        )
+        self._mute_cb.setStyleSheet(self._pause_cb.styleSheet())
+
         self._history.append(data)
         self._error_count += 1
         self._counter_lbl = ClickableLabel(f"Errors Received:  {self._error_count}")
@@ -400,6 +414,8 @@ class AlertWindow(QWidget):
         footer_layout.addWidget(hint)
         footer_layout.addSpacing(24)
         footer_layout.addWidget(self._pause_cb)
+        footer_layout.addSpacing(12)
+        footer_layout.addWidget(self._mute_cb)
         footer_layout.addStretch()
         footer_layout.addWidget(self._counter_lbl)
         footer_layout.addSpacing(32)
@@ -430,6 +446,10 @@ class AlertWindow(QWidget):
     @property
     def is_paused(self) -> bool:
         return self._pause_cb.isChecked()
+
+    @property
+    def is_muted(self) -> bool:
+        return self._mute_cb.isChecked()
 
     def update_message(self, data: dict):
         """Replace displayed fields with new message data and increment the counter."""
@@ -620,6 +640,18 @@ class DAQAlertApp:
         except Exception as exc:
             log.warning("Discovery responder not started: %s", exc)
 
+        # Text-to-speech alert reading. Best-effort, same as the discovery
+        # responder above: no working speech plugin on this platform must
+        # never block startup or crash the app.
+        self._tts = None
+        try:
+            self._tts = TTSSpeaker(enabled=TTS_ENABLED, rate=TTS_RATE,
+                                    volume=TTS_VOLUME, voice=TTS_VOICE,
+                                    engine_name=TTS_ENGINE)
+        except Exception as exc:
+            log.warning("Text-to-speech not started: %s", exc)
+        self._tts_templates = load_templates(TTS_TEMPLATE_FILE)
+
         # Allow Python signal handlers to fire inside the Qt event loop
         self._signal_timer = QTimer()
         self._signal_timer.setInterval(500)
@@ -660,6 +692,20 @@ class DAQAlertApp:
         """
         return any(window.is_paused for window in self._windows)
 
+    @property
+    def is_muted(self) -> bool:
+        """True while any open alert window has Mute Audio ticked.
+
+        Independent of is_paused: muting only silences speech, the visual
+        alert window still opens and updates as normal.
+        """
+        return any(window.is_muted for window in self._windows)
+
+    def _speak_alert(self, message_data: dict):
+        if self._tts is None or self.is_muted:
+            return
+        self._tts.speak(render_template(message_data, self._tts_templates))
+
     def _show_alert(self, message_data: dict):
         # ── Pause ─────────────────────────────────────────────────────────────
         # Checked before the throttle so a paused period does not consume the
@@ -680,6 +726,7 @@ class DAQAlertApp:
         self._last_accepted_time = now
 
         log.info("Displaying alert: %s", message_data)
+        self._speak_alert(message_data)
 
         # ── Window cap ────────────────────────────────────────────────────────
         if len(self._windows) >= MAX_ALERT_WINDOWS:
@@ -717,6 +764,8 @@ class DAQAlertApp:
         self.listener.stop()
         if self._responder is not None:
             self._responder.stop()
+        if self._tts is not None:
+            self._tts.stop()
         self._remove_pid()
         self.app.quit()
 
