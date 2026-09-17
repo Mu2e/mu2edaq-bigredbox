@@ -91,11 +91,27 @@ can still find it by port.
 X11 display to open alert windows on.  Required on Linux.
 .TP
 .B DAQ_ALERT_TTS_ENABLED
-Whether alerts are read aloud via Qt's
-.B QTextToSpeech
-module.  Accepts 1/0, true/false, yes/no, on/off (case\-insensitive).  Defaults to
+Whether alerts are read aloud.  Accepts 1/0, true/false, yes/no, on/off
+(case\-insensitive).  Defaults to
 .BR true .
 An unrecognized value is ignored with a warning and the default is used.
+.TP
+.B DAQ_ALERT_TTS_BACKEND
+Which engine reads alerts aloud:
+.I qt
+(the local Qt
+.B QTextToSpeech
+plugin) or
+.I aws
+(AWS Polly, requires the
+.I aws
+extra \(em
+.B "pip install .[aws]"
+\(em and network access).  Defaults to
+.IR qt .
+An unrecognized value is ignored with a warning and the default is used.  See
+.B TEXT\-TO\-SPEECH
+below.
 .TP
 .B DAQ_ALERT_TTS_RATE
 Speech rate, in Qt's
@@ -133,7 +149,37 @@ glob patterns to spoken\-text templates.  Defaults to
 .IR config/tts_templates.yaml ,
 resolved relative to the current directory.  A missing, unreadable, or
 malformed file is ignored with a warning; the listener falls back to its
-built\-in default template.
+built\-in default template.  Shared by both TTS backends.
+.TP
+.B DAQ_ALERT_TTS_AWS_VOICE
+AWS Polly voice ID (for example
+.IR Joanna " or " Matthew ).
+Defaults to
+.IR Joanna .
+Only used when
+.B DAQ_ALERT_TTS_BACKEND
+is
+.IR aws .
+.TP
+.B DAQ_ALERT_TTS_AWS_ENGINE
+AWS Polly engine tier:
+.IR standard ", " neural ", or " generative
+\(em a voice quality/cost axis, unrelated to
+.B DAQ_ALERT_TTS_ENGINE
+above (which selects a Qt platform plugin).  Defaults to
+.IR neural .
+.TP
+.B DAQ_ALERT_TTS_AWS_REGION
+AWS region for the Polly client.  Unset lets boto3 resolve it from the
+environment or
+.IR ~/.aws/config .
+.TP
+.B DAQ_ALERT_TTS_AWS_PROFILE
+Named AWS profile (from
+.I ~/.aws/credentials
+or
+.IR ~/.aws/config )
+to use for the Polly client.  Unset uses boto3's default credential chain.
 .SH FILES
 .TP
 .I /tmp/daq_alert.pid
@@ -164,23 +210,52 @@ Pause is global rather than per\-window \(em ticking it on one window
 suppresses alerts for all of them.  Processing resumes as soon as no open
 window has it ticked, either by unticking it or by closing that window.
 .SH TEXT-TO-SPEECH
-Each alert is read aloud via Qt's
-.B QTextToSpeech
-when it is accepted (that is, after the pause and rate\-limit checks), using
-a template selected by the alert's
+Each alert is read aloud when it is accepted (that is, after the pause and
+rate\-limit checks), using a template selected by the alert's
 .B system_id
 (see
 .BR DAQ_ALERT_TTS_TEMPLATE_FILE ).
-The spoken text engine, rate, volume, and voice are configured entirely
-through the
-.B DAQ_ALERT_TTS_*
-environment variables above; there are no command\-line flags.
+Two interchangeable backends are available, selected by
+.BR DAQ_ALERT_TTS_BACKEND :
+.TP
+.I qt
+(default) \(em the local Qt
+.B QTextToSpeech
+plugin.  Rate, volume, voice and plugin selection are configured via
+.BR DAQ_ALERT_TTS_RATE ", " DAQ_ALERT_TTS_VOLUME ", " DAQ_ALERT_TTS_VOICE ", and " DAQ_ALERT_TTS_ENGINE .
+.TP
+.I aws
+\(em AWS Polly, synthesized over the network and played back through
+QtMultimedia.  Requires the
+.I aws
+extra
+.RB ( "pip install .[aws]" )
+and AWS credentials resolvable via boto3's default chain (environment,
+.IR ~/.aws/credentials ,
+or an IAM role).  Voice and engine tier are configured via
+.BR DAQ_ALERT_TTS_AWS_VOICE " and " DAQ_ALERT_TTS_AWS_ENGINE ;
+.B DAQ_ALERT_TTS_RATE / _VOLUME / _VOICE / _ENGINE
+are Qt\-specific and not used by this backend.
 .PP
-Speech is best\-effort: a platform with no working speech plugin, an
+Switching backends is a restart\-time configuration choice, not a live
+toggle \(em there is no in\-app control for it, only
+.BR DAQ_ALERT_TTS_BACKEND .
+The two are meant to be compared by running the listener once per backend
+against the same alert.
+.PP
+Speech is best\-effort for either backend: a missing/broken local speech
+plugin, unset/invalid AWS credentials, network trouble reaching Polly, an
 unrecognized engine or voice name, or a missing/malformed template file all
 degrade to silence (or the built\-in default template) with a warning in the
 log, and never stop the listener from starting or the alert window from
-opening.
+opening.  The two backends differ in how they treat a failed attempt to
+speak one specific alert: the
+.I qt
+backend disables itself for the rest of the run (a broken local engine is not
+expected to recover), while the
+.I aws
+backend logs the failure and tries again on the next alert (network/AWS
+errors are often transient).
 .PP
 Each alert window also carries a
 .B Mute Audio

@@ -24,9 +24,11 @@ This is written using Qt6 (PyQt6) so it's portable. C, C++, and Python sender li
 - Has a **Pause** box that suppresses all incoming alerts while ticked — no
   new windows open and no open window updates (see *Pausing alerts* below)
 - Has a history of **Errors Received** and a counter which can open up a history so you can see what is going wrong.
-- Reads each alert aloud via Qt's `QTextToSpeech`, with the spoken text
-  driven by configurable per-`system_id` templates (see *Text-to-speech*
-  below), and a **Mute Audio** box to silence it without hiding the window
+- Reads each alert aloud, with the spoken text driven by configurable
+  per-`system_id` templates and a choice of two interchangeable engines —
+  the local Qt `QTextToSpeech` or AWS Polly, for comparing voice quality
+  (see *Text-to-speech* below) — plus a **Mute Audio** box to silence it
+  without hiding the window
 - Runs as a background daemon with PID and log file management
 
 ## Requirements
@@ -46,13 +48,15 @@ This does work with ssh forwarded X11 connections.
 > usual X11 client libraries (`libxkbcommon-x11`, `libEGL`, `xcb-cursor`); on
 > RHEL/AlmaLinux install `libxkbcommon-x11 xcb-util-cursor mesa-libEGL`.
 
-> **Text-to-speech note.** `QTextToSpeech` ships inside the `PyQt6` wheel
-> itself — no extra pip package is needed. The Qt plugin still needs a
-> working platform speech backend at the OS level: macOS (`AVSpeechSynthesizer`)
+> **Text-to-speech note.** `QTextToSpeech` and `QtMultimedia` both ship
+> inside the `PyQt6` wheel itself — no extra pip package is needed for the
+> default (`qt`) backend. The Qt speech plugin still needs a working
+> platform speech backend at the OS level: macOS (`AVSpeechSynthesizer`)
 > and Windows (SAPI) have one built in; on Linux install `speech-dispatcher`
 > or `flite` (e.g. `apt install speech-dispatcher` / `dnf install flite`).
-> Without one, TTS degrades to silence with a warning in the log — see
-> *Text-to-speech* below.
+> Without one, TTS degrades to silence with a warning in the log. The
+> alternate `aws` backend (AWS Polly) needs `pip install '.[aws]'` and AWS
+> credentials — see *Text-to-speech* below.
 
 ## Install
 
@@ -71,6 +75,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install .                       # or: pip install -e .
 pip install '.[discovery]'          # plus mu2edaq-discovery auto-discovery
+pip install '.[aws]'                # plus AWS Polly TTS backend (boto3)
 ```
 
 Installing provides two commands:
@@ -192,7 +197,7 @@ UDPListenerThread   ← background QThread, emits message_received signal
 | `src/mu2edaq_bigredbox/daq_alert.py` | Main application: UDP listener thread, alert window GUI, daemon lifecycle |
 | `src/mu2edaq_bigredbox/demo_sender.py` | Test utility to send mock alert messages |
 | `src/mu2edaq_bigredbox/config.py` | Shared constants (`BROADCAST_PORT`, `MESSAGE_RATE_LIMIT`, `MAX_ALERT_WINDOWS`, log/PID paths, `TTS_*`) |
-| `src/mu2edaq_bigredbox/tts.py` | Text-to-speech: `QTextToSpeech` wrapper, YAML template loading/rendering |
+| `src/mu2edaq_bigredbox/tts.py` | Text-to-speech: `QTextToSpeech` and AWS Polly backends, YAML template loading/rendering |
 | `daq_alert.py`, `demo_sender.py` | Root-level compatibility shims for running from a checkout |
 | `config/tts_templates.yaml` | Example/default text-to-speech templates |
 | `man/man1/` | Man pages for both console scripts |
@@ -218,11 +223,16 @@ Edit `src/mu2edaq_bigredbox/config.py` to change defaults:
 | `LOG_FILE` | `/tmp/daq_alert.log` | Daemon log path (overridden by `DAQ_ALERT_LOG_FILE`) |
 | `PID_FILE` | `/tmp/daq_alert.pid` | Daemon PID file path (overridden by `DAQ_ALERT_PID_FILE`) |
 | `TTS_ENABLED` | `True` | Whether alerts are read aloud (overridden by `DAQ_ALERT_TTS_ENABLED`) |
-| `TTS_RATE` | `None` (engine default) | Speech rate, -1.0 to 1.0 (overridden by `DAQ_ALERT_TTS_RATE`) |
-| `TTS_VOLUME` | `None` (engine default) | Speech volume, 0.0 to 1.0 (overridden by `DAQ_ALERT_TTS_VOLUME`) |
-| `TTS_VOICE` | `None` (engine default) | Voice name substring match (overridden by `DAQ_ALERT_TTS_VOICE`) |
+| `TTS_BACKEND` | `"qt"` | `"qt"` or `"aws"` (overridden by `DAQ_ALERT_TTS_BACKEND`) |
+| `TTS_RATE` | `None` (engine default) | Qt speech rate, -1.0 to 1.0 (overridden by `DAQ_ALERT_TTS_RATE`) |
+| `TTS_VOLUME` | `None` (engine default) | Qt speech volume, 0.0 to 1.0 (overridden by `DAQ_ALERT_TTS_VOLUME`) |
+| `TTS_VOICE` | `None` (engine default) | Qt voice name substring match (overridden by `DAQ_ALERT_TTS_VOICE`) |
 | `TTS_ENGINE` | `None` (auto) | Force a specific Qt TTS plugin (overridden by `DAQ_ALERT_TTS_ENGINE`) |
-| `TTS_TEMPLATE_FILE` | `config/tts_templates.yaml` | Spoken-text templates (overridden by `DAQ_ALERT_TTS_TEMPLATE_FILE`) |
+| `TTS_AWS_VOICE` | `"Joanna"` | AWS Polly voice ID (overridden by `DAQ_ALERT_TTS_AWS_VOICE`) |
+| `TTS_AWS_ENGINE` | `"neural"` | AWS Polly engine tier: standard/neural/generative (overridden by `DAQ_ALERT_TTS_AWS_ENGINE`) |
+| `TTS_AWS_REGION` | `None` (boto3 default) | AWS region for Polly (overridden by `DAQ_ALERT_TTS_AWS_REGION`) |
+| `TTS_AWS_PROFILE` | `None` (default chain) | Named AWS profile (overridden by `DAQ_ALERT_TTS_AWS_PROFILE`) |
+| `TTS_TEMPLATE_FILE` | `config/tts_templates.yaml` | Spoken-text templates, shared by both backends (overridden by `DAQ_ALERT_TTS_TEMPLATE_FILE`) |
 
 ## Pausing alerts
 
@@ -242,10 +252,45 @@ it, or close the paused window.
 
 ## Text-to-speech
 
-Each accepted alert (after the pause and rate-limit checks) is read aloud via
-Qt's `QTextToSpeech`, using a template chosen by the alert's `system_id`.
+Each accepted alert (after the pause and rate-limit checks) is read aloud,
+using a template chosen by the alert's `system_id`. Two interchangeable
+backends are available, picked with `DAQ_ALERT_TTS_BACKEND`:
+
+| Backend | Value | Needs |
+|---|---|---|
+| Local Qt engine (default) | `qt` | Nothing extra — `QTextToSpeech` ships in the `PyQt6` wheel, but needs a working OS speech backend (see the *Text-to-speech note* above) |
+| AWS Polly | `aws` | `pip install '.[aws]'` (boto3) and AWS credentials resolvable via boto3's default chain (environment, `~/.aws/credentials`, or an IAM role) |
+
+Switching is a restart-time config choice, not a live in-app toggle — the
+two backends are meant to be compared by running the listener once per
+backend against the same alert:
+
+```bash
+mu2edaq-bigredbox-send --system-id DAQ-NODE-03 --message "Comparing engines"
+
+DAQ_ALERT_TTS_BACKEND=qt  mu2edaq-bigredbox   # local Qt engine
+DAQ_ALERT_TTS_BACKEND=aws mu2edaq-bigredbox   # AWS Polly (neural Joanna by default)
+```
+
+Rate, volume, voice, and which Qt plugin to use (`DAQ_ALERT_TTS_RATE`,
+`_VOLUME`, `_VOICE`, `_ENGINE`) only apply to the `qt` backend. The `aws`
+backend has its own, differently-scaled knobs: `DAQ_ALERT_TTS_AWS_VOICE`
+(default `Joanna`), `DAQ_ALERT_TTS_AWS_ENGINE` (Polly's quality tier —
+`standard`/`neural`/`generative`, default `neural`), `DAQ_ALERT_TTS_AWS_REGION`,
+and `DAQ_ALERT_TTS_AWS_PROFILE` (a named profile from `~/.aws/config`).
+Polly's audio (mp3) is synthesized on a background thread and played back
+through `QtMultimedia` — no temp files, and the network call never blocks
+the alert window from opening.
+
+**Failure behavior differs between the two on purpose.** The `qt` backend
+disables itself for the rest of the run on an engine error, since a broken
+local plugin isn't going to fix itself mid-session. The `aws` backend does
+not — a failed Polly call (throttling, a network blip, since-corrected IAM
+permissions) just logs a warning and the next alert gets its own attempt,
+since those failures are often transient or externally fixable.
+
 Templates live in a YAML file, `config/tts_templates.yaml` by default
-(override with `DAQ_ALERT_TTS_TEMPLATE_FILE`):
+(override with `DAQ_ALERT_TTS_TEMPLATE_FILE`), shared by both backends:
 
 ```yaml
 default: "Critical error on {system_id}. {message}"
@@ -264,12 +309,13 @@ listener from starting.
 Each alert window also has a **Mute Audio** box, independent of Pause: while
 ticked it silences speech only — the window itself still opens and updates
 normally. Like Pause, muting is global across open windows and resumes as
-soon as no open window has it ticked.
+soon as no open window has it ticked. It applies to whichever backend is
+active.
 
-Rate, volume, voice, and which Qt speech plugin to use are all configured via
-the `DAQ_ALERT_TTS_*` environment variables in *Environment overrides* below;
-there is no command-line flag for any of it (see the Configuration table
-above for the matching `config.py` constants).
+Everything above is configured via the `DAQ_ALERT_TTS_*` environment
+variables in *Environment overrides* below; there is no command-line flag
+for any of it (see the Configuration table above for the matching
+`config.py` constants).
 
 ### Environment overrides
 
@@ -279,11 +325,16 @@ above for the matching `config.py` constants).
 | `DAQ_ALERT_LOG_FILE` | `LOG_FILE` | Falls back to stderr if the file cannot be opened |
 | `DAQ_ALERT_PID_FILE` | `PID_FILE` | The listener keeps running if it cannot be written |
 | `DAQ_ALERT_TTS_ENABLED` | `TTS_ENABLED` | 1/0, true/false, yes/no, on/off (case-insensitive); unrecognized falls back to `True` |
-| `DAQ_ALERT_TTS_RATE` | `TTS_RATE` | Out-of-range or non-numeric falls back to the engine default |
-| `DAQ_ALERT_TTS_VOLUME` | `TTS_VOLUME` | Out-of-range or non-numeric falls back to the engine default |
-| `DAQ_ALERT_TTS_VOICE` | `TTS_VOICE` | No match found falls back to the engine's default voice |
-| `DAQ_ALERT_TTS_ENGINE` | `TTS_ENGINE` | An unsupported plugin name disables TTS rather than crashing |
-| `DAQ_ALERT_TTS_TEMPLATE_FILE` | `TTS_TEMPLATE_FILE` | Missing/unreadable/malformed falls back to the built-in default template |
+| `DAQ_ALERT_TTS_BACKEND` | `TTS_BACKEND` | `qt` or `aws` (case-insensitive); unrecognized falls back to `qt` |
+| `DAQ_ALERT_TTS_RATE` | `TTS_RATE` | Qt only. Out-of-range or non-numeric falls back to the engine default |
+| `DAQ_ALERT_TTS_VOLUME` | `TTS_VOLUME` | Qt only. Out-of-range or non-numeric falls back to the engine default |
+| `DAQ_ALERT_TTS_VOICE` | `TTS_VOICE` | Qt only. No match found falls back to the engine's default voice |
+| `DAQ_ALERT_TTS_ENGINE` | `TTS_ENGINE` | Qt only. An unsupported plugin name disables TTS rather than crashing |
+| `DAQ_ALERT_TTS_AWS_VOICE` | `TTS_AWS_VOICE` | AWS only. Polly voice ID, e.g. `Joanna`, `Matthew` |
+| `DAQ_ALERT_TTS_AWS_ENGINE` | `TTS_AWS_ENGINE` | AWS only. Polly engine tier: `standard`/`neural`/`generative` |
+| `DAQ_ALERT_TTS_AWS_REGION` | `TTS_AWS_REGION` | AWS only. Unset lets boto3 resolve it (env or `~/.aws/config`) |
+| `DAQ_ALERT_TTS_AWS_PROFILE` | `TTS_AWS_PROFILE` | AWS only. Unset uses boto3's default credential chain |
+| `DAQ_ALERT_TTS_TEMPLATE_FILE` | `TTS_TEMPLATE_FILE` | Shared by both backends. Missing/unreadable/malformed falls back to the built-in default template |
 
 The default `/tmp` paths are shared by every user on a machine, so the first
 operator to start the listener owns them. On a node where more than one person

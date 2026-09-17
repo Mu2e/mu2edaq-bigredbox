@@ -15,15 +15,19 @@ This repository contains two independently buildable components:
 
 - Python 3.9 or later
 - PyQt6 (Qt 6.4+), pulled in automatically by the install — this includes
-  `QtTextToSpeech`, used for spoken alert reading; no separate addon package
-  is needed
+  `QtTextToSpeech` and `QtMultimedia`, used for the two text-to-speech
+  backends; no separate addon package is needed for either
 - PyYAML, pulled in automatically by the install — used for the optional
   text-to-speech templates file
 - A running X11/Wayland display (`DISPLAY` must be set)
-- For text-to-speech on Linux: a system speech backend such as
-  `speech-dispatcher` or `flite` (macOS and Windows have one built in).
-  Without it, TTS degrades to silence with a warning in the log rather than
-  blocking startup.
+- For the default (`qt`) text-to-speech backend on Linux: a system speech
+  backend such as `speech-dispatcher` or `flite` (macOS and Windows have one
+  built in). Without it, TTS degrades to silence with a warning in the log
+  rather than blocking startup.
+- For the alternate `aws` text-to-speech backend (`DAQ_ALERT_TTS_BACKEND=aws`):
+  the `aws` extra (`pip install '.[aws]'`, pulls in `boto3`) and AWS
+  credentials resolvable via boto3's default chain. Also optional/best-effort
+  — missing `boto3` or unusable credentials degrade to silence, not a crash.
 
 The GUI uses **Qt6 via PyQt6**; there is no remaining Qt5 dependency. PyQt6
 6.10 and later require Python 3.10+, so a Python 3.9 environment resolves to
@@ -57,6 +61,7 @@ source venv/bin/activate
 pip install .                     # runtime install
 pip install -e '.[dev]'           # editable + test tooling
 pip install '.[discovery]'        # optional mu2edaq-discovery support
+pip install '.[aws]'              # optional AWS Polly TTS backend
 ```
 
 The layout is a standard `src/` package:
@@ -69,7 +74,7 @@ src/mu2edaq_bigredbox/
 ├── config.py
 ├── daq_alert.py
 ├── demo_sender.py
-└── tts.py              # QTextToSpeech wrapper, YAML template loading/rendering
+└── tts.py              # QTextToSpeech + AWS Polly backends, YAML template loading/rendering
 config/
 └── tts_templates.yaml  # example/default text-to-speech templates
 man/man1/*.1
@@ -77,7 +82,7 @@ tests/
 ├── conftest.py        # forces QT_QPA_PLATFORM=offscreen
 ├── test_packaging.py
 ├── test_gui.py         # headless PyQt6 widget tests
-└── test_tts.py         # template rendering + TTSSpeaker tests (fake engine)
+└── test_tts.py         # template rendering + TTSSpeaker/AWSPollySpeaker tests (fake engine/client)
 ```
 
 ### Building distributions
@@ -129,7 +134,7 @@ pytest
 |---|---|
 | `tests/test_packaging.py` | Package metadata, `CRS_PORT_UDP` override, UDP payload format, console-script registration |
 | `tests/test_gui.py` | PyQt6 widget construction, alert update/counter, pause/mute checkboxes, history dialog, key handling, listener thread lifecycle, `_bool`/`_float`/`_port` config parsing |
-| `tests/test_tts.py` | `render_template`/`load_templates` (glob matching, YAML fallback behaviour), `TTSSpeaker` against a fake `QTextToSpeech` (no real audio/speech plugin required) |
+| `tests/test_tts.py` | `render_template`/`load_templates` (glob matching, YAML fallback behaviour); `TTSSpeaker` against a fake `QTextToSpeech`; `_PollySynthesisThread`/`AWSPollySpeaker` against a fake boto3 client and fake `QMediaPlayer`/`QAudioOutput` (no real audio, network, or AWS credentials required); `create_speaker()` backend selection |
 
 The GUI tests run headless: `tests/conftest.py` sets
 `QT_QPA_PLATFORM=offscreen` before Qt is imported, and `pyproject.toml` pins

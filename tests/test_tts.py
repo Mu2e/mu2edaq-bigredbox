@@ -257,3 +257,229 @@ def test_speaker_unknown_voice_keeps_engine_default(monkeypatch):
     engine = fake_cls.instances[0]
     assert engine.voice_set is None
     assert speaker._available is True   # a missing voice is not fatal
+
+
+# ── AWSPollySpeaker / _PollySynthesisThread (fake boto3 + QtMultimedia) ─────
+
+class _FakeAudioStream:
+    def __init__(self, data):
+        self._data = data
+
+    def read(self):
+        return self._data
+
+
+class _FakePollyClient:
+    """Stand-in for a boto3 Polly client -- no real network call."""
+
+    def __init__(self, fail=False, fail_message="boom"):
+        self.fail = fail
+        self.fail_message = fail_message
+        self.calls = []
+
+    def synthesize_speech(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError(self.fail_message)
+        return {"AudioStream": _FakeAudioStream(b"fake-mp3-bytes")}
+
+
+class _FakeBoto3:
+    """Stand-in for the boto3 module used by tts.py."""
+
+    def __init__(self, client):
+        self._client = client
+        self.session_profile = None
+        self.last_region = None
+
+    def client(self, service_name, region_name=None):
+        self.last_region = region_name
+        return self._client
+
+    def Session(self, profile_name=None):
+        self.session_profile = profile_name
+        return self   # Session.client() has the same shape as boto3.client()
+
+
+class _FakeAudioOutput:
+    def __init__(self):
+        pass
+
+
+class _FakeMediaPlayer:
+    instances = []
+
+    def __init__(self):
+        self.errorOccurred = _FakeSignal()
+        self.audio_output = None
+        self.source_device = None
+        self.played = False
+        self.stopped = False
+        _FakeMediaPlayer.instances.append(self)
+
+    def setAudioOutput(self, output):
+        self.audio_output = output
+
+    def setSourceDevice(self, device):
+        self.source_device = device
+
+    def play(self):
+        self.played = True
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_polly_thread_emits_synthesized_audio(qtbot):
+    client = _FakePollyClient()
+    thread = tts._PollySynthesisThread(client, voice="Joanna", engine="neural")
+    thread.start()
+    try:
+        with qtbot.waitSignal(thread.synthesized, timeout=2000) as blocker:
+            thread.speak("hello")
+        assert blocker.args == [b"fake-mp3-bytes"]
+        assert client.calls[-1] == {
+            "Text": "hello", "OutputFormat": "mp3",
+            "VoiceId": "Joanna", "Engine": "neural",
+        }
+    finally:
+        thread.stop()
+
+
+def test_polly_thread_emits_failed_on_exception(qtbot):
+    client = _FakePollyClient(fail=True, fail_message="throttled")
+    thread = tts._PollySynthesisThread(client, voice="Joanna", engine="neural")
+    thread.start()
+    try:
+        with qtbot.waitSignal(thread.failed, timeout=2000) as blocker:
+            thread.speak("hello")
+        assert "throttled" in blocker.args[0]
+    finally:
+        thread.stop()
+
+
+def test_polly_thread_survives_repeated_failures(qtbot):
+    """A failed synthesis must not kill the worker thread."""
+    client = _FakePollyClient(fail=True)
+    thread = tts._PollySynthesisThread(client, voice="Joanna", engine="neural")
+    thread.start()
+    try:
+        with qtbot.waitSignal(thread.failed, timeout=2000):
+            thread.speak("first")
+        client.fail = False
+        with qtbot.waitSignal(thread.synthesized, timeout=2000):
+            thread.speak("second")
+    finally:
+        thread.stop()
+
+
+def test_polly_thread_stop_joins_cleanly(qtbot):
+    client = _FakePollyClient()
+    thread = tts._PollySynthesisThread(client, voice="Joanna", engine="neural")
+    thread.start()
+    thread.stop()
+    assert thread.isRunning() is False
+
+
+def test_polly_speaker_disabled_creates_no_client(monkeypatch):
+    monkeypatch.setattr(tts, "boto3", _FakeBoto3(_FakePollyClient()))
+    monkeypatch.setattr(tts, "QMediaPlayer", _FakeMediaPlayer)
+    monkeypatch.setattr(tts, "QAudioOutput", _FakeAudioOutput)
+
+    speaker = tts.AWSPollySpeaker(enabled=False)
+
+    assert speaker._available is False
+    speaker.speak("should not raise")
+    speaker.stop()
+
+
+def test_polly_speaker_without_boto3_is_unavailable(monkeypatch):
+    monkeypatch.setattr(tts, "boto3", None)
+    monkeypatch.setattr(tts, "QMediaPlayer", _FakeMediaPlayer)
+    monkeypatch.setattr(tts, "QAudioOutput", _FakeAudioOutput)
+
+    speaker = tts.AWSPollySpeaker(enabled=True)
+
+    assert speaker._available is False
+    speaker.speak("no boto3")   # must not raise
+    speaker.stop()
+
+
+def test_polly_speaker_client_construction_failure_is_not_fatal(monkeypatch):
+    class _BrokenBoto3:
+        def client(self, *a, **k):
+            raise RuntimeError("no region")
+
+    monkeypatch.setattr(tts, "boto3", _BrokenBoto3())
+    monkeypatch.setattr(tts, "QMediaPlayer", _FakeMediaPlayer)
+    monkeypatch.setattr(tts, "QAudioOutput", _FakeAudioOutput)
+
+    speaker = tts.AWSPollySpeaker(enabled=True)
+
+    assert speaker._available is False
+    speaker.speak("no client")   # must not raise
+    speaker.stop()
+
+
+def test_polly_speaker_speaks_and_plays_audio(qtbot, monkeypatch):
+    fake_client = _FakePollyClient()
+    fake_boto3 = _FakeBoto3(fake_client)
+    monkeypatch.setattr(tts, "boto3", fake_boto3)
+    monkeypatch.setattr(tts, "QMediaPlayer", _FakeMediaPlayer)
+    monkeypatch.setattr(tts, "QAudioOutput", _FakeAudioOutput)
+
+    speaker = tts.AWSPollySpeaker(enabled=True, voice="Joanna", engine="neural",
+                                   region="us-west-2")
+    assert speaker._available is True
+    assert fake_boto3.last_region == "us-west-2"
+
+    speaker.speak("hello from polly")
+
+    qtbot.waitUntil(lambda: _FakeMediaPlayer.instances[-1].played, timeout=2000)
+    player = _FakeMediaPlayer.instances[-1]
+    assert player.source_device is not None
+
+    speaker.stop()
+    assert player.stopped is True
+
+
+def test_polly_speaker_uses_named_profile(monkeypatch):
+    fake_client = _FakePollyClient()
+    fake_boto3 = _FakeBoto3(fake_client)
+    monkeypatch.setattr(tts, "boto3", fake_boto3)
+    monkeypatch.setattr(tts, "QMediaPlayer", _FakeMediaPlayer)
+    monkeypatch.setattr(tts, "QAudioOutput", _FakeAudioOutput)
+
+    speaker = tts.AWSPollySpeaker(enabled=True, profile="andrew")
+
+    assert speaker._available is True
+    assert fake_boto3.session_profile == "andrew"
+    speaker.stop()
+
+
+# ── create_speaker() ─────────────────────────────────────────────────────────
+
+def test_create_speaker_qt_backend(monkeypatch):
+    monkeypatch.setattr(tts, "QTextToSpeech", _make_fake_engine())
+    speaker = tts.create_speaker("qt", enabled=True)
+    assert isinstance(speaker, tts.TTSSpeaker)
+
+
+def test_create_speaker_aws_backend(monkeypatch):
+    monkeypatch.setattr(tts, "boto3", _FakeBoto3(_FakePollyClient()))
+    monkeypatch.setattr(tts, "QMediaPlayer", _FakeMediaPlayer)
+    monkeypatch.setattr(tts, "QAudioOutput", _FakeAudioOutput)
+
+    speaker = tts.create_speaker("aws", enabled=True, aws_voice="Joanna",
+                                  aws_engine="neural")
+
+    assert isinstance(speaker, tts.AWSPollySpeaker)
+    speaker.stop()
+
+
+def test_create_speaker_unknown_backend_falls_back_to_qt(monkeypatch):
+    """config._choice() already restricts TTS_BACKEND, so this is defensive."""
+    monkeypatch.setattr(tts, "QTextToSpeech", _make_fake_engine())
+    speaker = tts.create_speaker("something-else", enabled=True)
+    assert isinstance(speaker, tts.TTSSpeaker)

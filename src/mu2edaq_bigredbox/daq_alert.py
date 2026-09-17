@@ -27,9 +27,10 @@ from . import __version__
 from .config import (
     BROADCAST_PORT, PID_FILE, LOG_FILE, MESSAGE_RATE_LIMIT, MAX_ALERT_WINDOWS,
     TTS_ENABLED, TTS_RATE, TTS_VOLUME, TTS_VOICE, TTS_ENGINE,
-    TTS_TEMPLATE_FILE,
+    TTS_TEMPLATE_FILE, TTS_BACKEND, TTS_AWS_VOICE, TTS_AWS_ENGINE,
+    TTS_AWS_REGION, TTS_AWS_PROFILE,
 )
-from .tts import TTSSpeaker, load_templates, render_template
+from .tts import create_speaker, load_templates, render_template
 
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
@@ -641,13 +642,17 @@ class DAQAlertApp:
             log.warning("Discovery responder not started: %s", exc)
 
         # Text-to-speech alert reading. Best-effort, same as the discovery
-        # responder above: no working speech plugin on this platform must
-        # never block startup or crash the app.
+        # responder above: no working speech plugin/backend on this platform
+        # must never block startup or crash the app. TTS_BACKEND picks
+        # between the local Qt engine and AWS Polly; create_speaker() never
+        # raises on its own, but stays wrapped here as defense in depth.
         self._tts = None
         try:
-            self._tts = TTSSpeaker(enabled=TTS_ENABLED, rate=TTS_RATE,
-                                    volume=TTS_VOLUME, voice=TTS_VOICE,
-                                    engine_name=TTS_ENGINE)
+            self._tts = create_speaker(
+                TTS_BACKEND, enabled=TTS_ENABLED, rate=TTS_RATE,
+                volume=TTS_VOLUME, voice=TTS_VOICE, engine_name=TTS_ENGINE,
+                aws_voice=TTS_AWS_VOICE, aws_engine=TTS_AWS_ENGINE,
+                aws_region=TTS_AWS_REGION, aws_profile=TTS_AWS_PROFILE)
         except Exception as exc:
             log.warning("Text-to-speech not started: %s", exc)
         self._tts_templates = load_templates(TTS_TEMPLATE_FILE)

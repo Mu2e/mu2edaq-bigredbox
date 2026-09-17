@@ -8,3 +8,6 @@ PyYAML>=6.0
 # Mu2e DAQ service discovery (stdlib-only; from the sibling submodule).
 # Optional -- also available as the `discovery` extra.
 mu2edaq-discovery
+# AWS Polly TTS backend (DAQ_ALERT_TTS_BACKEND=aws) is opt-in, not part of
+# the base install: `pip install .[aws]`, or uncomment below.
+# boto3>=1.28

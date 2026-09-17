@@ -87,6 +87,25 @@ def _float(value, default, lo, hi, source):
     return parsed
 
 
+def _choice(value, default, choices, source):
+    """Parse a case-insensitive enum value, falling back to `default`.
+
+    `choices` is compared case-insensitively but the matching entry from
+    `choices` (not the raw input) is returned, so callers get a normalized
+    value. An unrecognized value falls back to `default` with a warning,
+    per this module's never-raise contract.
+    """
+    if value is None or str(value).strip() == "":
+        return default
+    text = str(value).strip().lower()
+    for choice in choices:
+        if text == choice.lower():
+            return choice
+    log.warning("%s=%r is not one of %s; using default %r",
+                source, value, choices, default)
+    return default
+
+
 # PID file location for daemon management.
 # Override with DAQ_ALERT_PID_FILE; the default is shared by every user on the
 # machine, so a second operator on the same node should point this elsewhere.
@@ -150,3 +169,28 @@ TTS_TEMPLATE_FILE = _path("DAQ_ALERT_TTS_TEMPLATE_FILE",
 # Built-in fallback spoken-text template, used whenever no template file is
 # configured/loadable or no template matches a given system_id.
 DEFAULT_TTS_TEMPLATE = "Critical error on {system_id}. {message}"
+
+# Which engine reads alerts aloud: the local Qt QTextToSpeech plugin, or AWS
+# Polly (requires the "aws" extra -- `pip install .[aws]` -- and network
+# access; degrades to silence with a warning if unavailable). Override with
+# DAQ_ALERT_TTS_BACKEND. An unrecognized value falls back to "qt".
+TTS_BACKEND = _choice(os.environ.get("DAQ_ALERT_TTS_BACKEND"), "qt",
+                      ("qt", "aws"), "DAQ_ALERT_TTS_BACKEND")
+
+# AWS Polly voice ID (e.g. "Joanna", "Matthew"). Override with
+# DAQ_ALERT_TTS_AWS_VOICE. Only used when TTS_BACKEND is "aws".
+TTS_AWS_VOICE = _path("DAQ_ALERT_TTS_AWS_VOICE", "Joanna")
+
+# AWS Polly engine tier: "standard", "neural", or "generative" -- a voice
+# quality/cost axis, unrelated to TTS_ENGINE above (which selects a Qt
+# platform plugin). Override with DAQ_ALERT_TTS_AWS_ENGINE.
+TTS_AWS_ENGINE = _path("DAQ_ALERT_TTS_AWS_ENGINE", "neural")
+
+# AWS region for the Polly client. None lets boto3 resolve it from the
+# environment or ~/.aws/config. Override with DAQ_ALERT_TTS_AWS_REGION.
+TTS_AWS_REGION = _path("DAQ_ALERT_TTS_AWS_REGION", None)
+
+# Named AWS profile (from ~/.aws/credentials / ~/.aws/config) to use for the
+# Polly client. None uses boto3's default credential chain. Override with
+# DAQ_ALERT_TTS_AWS_PROFILE.
+TTS_AWS_PROFILE = _path("DAQ_ALERT_TTS_AWS_PROFILE", None)

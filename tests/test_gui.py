@@ -498,6 +498,36 @@ def test_bad_tts_env_vars_do_not_crash_import():
     assert result.stdout.split() == ["True", "None", "None"]
 
 
+@pytest.mark.parametrize("value, expected", [
+    ("qt", "qt"),
+    ("aws", "aws"),
+    ("AWS", "aws"),        # case-insensitive
+    ("  qt  ", "qt"),      # whitespace tolerated
+    ("", "qt"),            # blank -- falls back to default
+    (None, "qt"),          # unset
+    ("polly", "qt"),       # unrecognized
+])
+def test_choice_parsing_never_raises(value, expected):
+    from mu2edaq_bigredbox.config import _choice
+
+    assert _choice(value, "qt", ("qt", "aws"), "TEST_VAR") == expected
+
+
+def test_bad_tts_backend_does_not_crash_import():
+    """An unrecognized DAQ_ALERT_TTS_BACKEND must fall back, not raise."""
+    import subprocess
+    import sys as _sys
+
+    result = subprocess.run(
+        [_sys.executable, "-c",
+         "import mu2edaq_bigredbox.config as c; print(c.TTS_BACKEND)"],
+        env=dict(os.environ, DAQ_ALERT_TTS_BACKEND="polly"),
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "qt"
+
+
 def test_bad_crs_port_udp_does_not_crash_import():
     """End-to-end for #12: importing with a blank value used to raise."""
     import subprocess

@@ -1,13 +1,19 @@
 """
-Text-to-speech alert reading via Qt's QTextToSpeech, and the YAML-backed
-template rendering that produces the text it speaks.
+Text-to-speech alert reading, and the YAML-backed template rendering that
+produces the text spoken. Two interchangeable backends are available,
+selected via create_speaker(): the local Qt QTextToSpeech engine
+(TTSSpeaker), and AWS Polly (AWSPollySpeaker), played back through
+QtMultimedia.
 
 Compatible with Python 3.9+
 """
 
 import fnmatch
 import logging
+import queue
 
+from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QThread, pyqtSignal
+from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtTextToSpeech import QTextToSpeech
 
 from .config import DEFAULT_TTS_TEMPLATE
@@ -18,6 +24,11 @@ try:
     import yaml
 except ImportError:
     yaml = None
+
+try:
+    import boto3
+except ImportError:
+    boto3 = None
 
 
 class TTSSpeaker:
@@ -124,6 +135,171 @@ class TTSSpeaker:
             self._engine.stop()
         except Exception:
             log.warning("Error stopping text-to-speech engine", exc_info=True)
+
+
+class _PollySynthesisThread(QThread):
+    """Background thread that turns queued text into AWS Polly audio bytes.
+
+    AWS Polly's synthesize_speech() is a blocking HTTP call with no async
+    API available here, so it runs the same way UDPListenerThread runs its
+    blocking recvfrom() loop (daq_alert.py): a persistent daemon thread
+    bounded by a queue.get() timeout so stop() can return promptly, with
+    results handed back to the GUI thread via a signal -- PyQt marshals a
+    signal emitted from a QThread.run() to whichever thread the connected
+    slot lives on automatically, the same mechanism message_received uses.
+    """
+
+    synthesized = pyqtSignal(bytes)
+    failed = pyqtSignal(str)
+
+    def __init__(self, client, voice, engine):
+        super().__init__()
+        self._client = client
+        self._voice = voice
+        self._engine = engine
+        self._queue = queue.Queue()
+        self._running = True
+
+    def speak(self, text):
+        self._queue.put(text)
+
+    def run(self):
+        while self._running:
+            try:
+                text = self._queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            if text is None:
+                break
+            try:
+                response = self._client.synthesize_speech(
+                    Text=text, OutputFormat="mp3", VoiceId=self._voice,
+                    Engine=self._engine)
+                audio = response["AudioStream"].read()
+            except Exception as exc:
+                # A single failed synthesis (throttling, a transient
+                # network blip) must not kill the thread -- the next
+                # alert deserves its own attempt.
+                self.failed.emit(str(exc))
+                continue
+            self.synthesized.emit(audio)
+
+    def stop(self):
+        self._running = False
+        self._queue.put(None)
+        self.wait(3000)
+
+
+class AWSPollySpeaker:
+    """Speaks alert text aloud via AWS Polly, played back through QtMultimedia.
+
+    Text synthesis is a blocking network call, so it runs on a background
+    _PollySynthesisThread; QMediaPlayer/QAudioOutput/QBuffer must be
+    constructed and driven from the GUI thread, so the synthesized-audio
+    signal is handled by a slot here rather than inside the worker thread.
+
+    Unlike TTSSpeaker, a failure speaking one alert does not permanently
+    disable the speaker: AWS errors are frequently transient (network
+    blips, throttling) or externally fixable (an IAM policy corrected)
+    without restarting this app, so each speak() call is independently
+    best-effort. Only a missing boto3 install or a client that cannot be
+    constructed at all (e.g. no resolvable region) disables it for good.
+    """
+
+    def __init__(self, enabled, voice="Joanna", engine="neural", region=None,
+                 profile=None):
+        self._worker = None
+        self._player = None
+        self._audio_output = None
+        self._buffer = None
+        self._available = False
+        if not enabled:
+            return
+
+        if boto3 is None:
+            log.warning("boto3 is not installed; AWS Polly TTS disabled "
+                        "(pip install '.[aws]')")
+            return
+
+        try:
+            if profile:
+                session = boto3.Session(profile_name=profile)
+                client = session.client("polly", region_name=region)
+            else:
+                client = boto3.client("polly", region_name=region)
+        except Exception as exc:
+            log.warning("Could not create AWS Polly client; TTS disabled "
+                        "(%s)", exc)
+            return
+
+        self._player = QMediaPlayer()
+        self._audio_output = QAudioOutput()
+        self._player.setAudioOutput(self._audio_output)
+        self._player.errorOccurred.connect(self._on_player_error)
+
+        self._worker = _PollySynthesisThread(client, voice, engine)
+        self._worker.synthesized.connect(self._play)
+        self._worker.failed.connect(self._on_synthesis_failed)
+        self._worker.start()
+
+        self._available = True
+
+    def _play(self, audio_bytes):
+        """Qt slot; runs on the GUI thread. A new alert pre-empts playback
+        of whatever the previous one was still speaking."""
+        if self._player is None:
+            return
+        self._player.stop()
+        self._buffer = QBuffer()
+        self._buffer.setData(QByteArray(audio_bytes))
+        self._buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+        self._player.setSourceDevice(self._buffer)
+        self._player.play()
+
+    def _on_synthesis_failed(self, message):
+        """Qt slot; must never raise."""
+        log.warning("AWS Polly speech synthesis failed; skipping this "
+                    "alert (%s)", message)
+
+    def _on_player_error(self, error, error_string):
+        """Qt slot; must never raise."""
+        log.warning("AWS Polly playback error: %s", error_string)
+
+    def speak(self, text):
+        if not self._available or not text:
+            return
+        self._worker.speak(text)
+
+    def stop(self):
+        """Cut off any in-progress speech. Best-effort; runs at shutdown."""
+        if self._player is not None:
+            try:
+                self._player.stop()
+            except Exception:
+                log.warning("Error stopping Polly playback", exc_info=True)
+        if self._worker is not None:
+            try:
+                self._worker.stop()
+            except Exception:
+                log.warning("Error stopping Polly synthesis thread",
+                            exc_info=True)
+
+
+def create_speaker(backend, *, enabled, rate=None, volume=None, voice=None,
+                    engine_name=None, aws_voice=None, aws_engine=None,
+                    aws_region=None, aws_profile=None):
+    """Construct the configured TTS backend. Never raises.
+
+    backend == "aws" builds an AWSPollySpeaker; anything else (including
+    the expected "qt") builds a TTSSpeaker -- config.py's _choice() already
+    guarantees backend is one of ("qt", "aws"), so the fallback branch here
+    is defensive, not a path exercised in practice.
+    """
+    if backend == "aws":
+        return AWSPollySpeaker(enabled, voice=aws_voice, engine=aws_engine,
+                                region=aws_region, profile=aws_profile)
+    return TTSSpeaker(enabled, rate=rate, volume=volume, voice=voice,
+                       engine_name=engine_name)
 
 
 def _text(value, default):

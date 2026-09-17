@@ -30,6 +30,9 @@ dependencies = [
 [project.optional-dependencies]
 # Service discovery is optional: the app degrades gracefully without it.
 discovery = ["mu2edaq-discovery"]
+# AWS Polly TTS backend (DAQ_ALERT_TTS_BACKEND=aws) is optional: the app
+# degrades gracefully without it, falling back to silence with a warning.
+aws = ["boto3>=1.28"]
 dev = ["pytest>=7.0", "pytest-qt>=4.0", "build>=1.0"]
 
 [project.urls]

@@ -14,8 +14,20 @@
 # Path is overridable with DAQ_ALERT_TTS_TEMPLATE_FILE; see
 # `man mu2edaq-bigredbox` for the full list of DAQ_ALERT_TTS_* variables.
 
+# Default error message
 default: "Critical error on {system_id}. {message}"
 
+# Messages coming from Run Control
+"Run-Contr*": "Run Control Error.  {message}"
+
+# Crash Errors
+"*Crash*": "Crash detected! Time: {timestamp} from {system_id}.  Error {message}"
+
+# Individual Node errors
 "DAQ-NODE-*": "Attention. Node {system_id} reports a critical error. {message}"
 
+# Timing control errors
 "CFO*": "C. F. O. {system_id} has a critical error. {message}"
+
+# Readout Controler Errors
+"ROC*": "Read Out Controler Error on {system_id}, {message}"
