@@ -1,0 +1,232 @@
+schema: mega-review/1
+package: mu2edaq-bigredbox
+tier: A
+group: monitoring
+repo:
+  url: git@github.com:Mu2e/mu2edaq-bigredbox.git
+  exists: true
+  issues_enabled: true
+doc_dir: docs
+summary: >
+  Deliberately un-ignorable critical-alert annunciator that listens for JSON
+  alerts on UDP broadcast port 37020 and raises an always-on-top PyQt6 window
+  that also reads the alert aloud, with C, C++ and Python sender libraries
+languages: [python, c, cpp]
+loc: 3603
+
+runtime:
+  executables:
+    - name: mu2edaq-bigredbox
+      kind: gui
+      man_page: man/man1/mu2edaq-bigredbox.1
+      note: "console script, pyproject.toml:43; also python -m mu2edaq_bigredbox"
+    - name: daq_alert.py
+      kind: script
+      man_page: man/man1/mu2edaq-bigredbox.1
+      note: "checkout launcher shim for the listener; listed in that page's SYNOPSIS"
+    - name: mu2edaq-bigredbox-send
+      kind: cli
+      man_page: man/man1/mu2edaq-bigredbox-send.1
+      note: "console script, pyproject.toml:44"
+    - name: demo_sender.py
+      kind: script
+      man_page: man/man1/mu2edaq-bigredbox-send.1
+      note: "checkout launcher shim for the test sender; listed in that page's SYNOPSIS"
+    - name: start-mu2edaq-bigredbox.sh
+      kind: script
+      man_page: man/man1/start-mu2edaq-bigredbox.sh.1
+    - name: stop-mu2edaq-bigredbox.sh
+      kind: script
+      man_page: man/man1/stop-mu2edaq-bigredbox.sh.1
+    - name: start_daq_alert.sh
+      kind: script
+      man_page: man/man1/start-mu2edaq-bigredbox.sh.1
+      note: "git symlink (mode 120000) to start-mu2edaq-bigredbox.sh; named in that page"
+    - name: stop_daq_alert.sh
+      kind: script
+      man_page: man/man1/stop-mu2edaq-bigredbox.sh.1
+      note: "git symlink (mode 120000) to stop-mu2edaq-bigredbox.sh; named in that page"
+    - name: bootstrap.sh
+      kind: script
+      man_page: man/man1/bootstrap.sh.1
+    - name: example-sender-c
+      kind: cli
+      man_page: libs/examples/example-sender-c/example-sender-c.1
+      note: "left beside its source because libs/examples/example-sender-c/CMakeLists.txt:5 installs it from there"
+    - name: example-sender-cpp
+      kind: cli
+      man_page: libs/examples/example-sender-cpp/example-sender-cpp.1
+      note: "left beside its source because libs/examples/example-sender-cpp/CMakeLists.txt:5 installs it from there"
+    - name: example-sender-py
+      kind: cli
+      man_page: libs/examples/example-sender-py/example-sender-py.1
+      note: "left beside its source because libs/examples/example-sender-py/CMakeLists.txt:5-8 installs it from there"
+    - name: daq_alert_c
+      kind: library
+      man_page: man/man3/libdaq_alert.3
+      note: "static libdaq_alert.a, libs/c/CMakeLists.txt:1,13"
+    - name: daq_alert_cpp
+      kind: library
+      man_page: man/man3/libdaq_alert_cpp.3
+      note: "static libdaq_alert_cpp.a wrapping the C library, libs/cpp/CMakeLists.txt:1,10"
+    - name: daq_alert
+      kind: library
+      man_page: man/man3/daq_alert.3
+      note: "Python distribution daq-alert 1.0.0, libs/python/pyproject.toml"
+  services: []
+  ports:
+    - {port: 37020, proto: udp, role: alert-ingest-broadcast, source: "src/mu2edaq_bigredbox/config.py:15"}
+  config_files: [config/tts_templates.yaml]
+  env_vars:
+    - CRS_PORT_UDP
+    - CRS_STOP_TIMEOUT
+    - DISPLAY
+    - QT_QPA_PLATFORM
+    - DAQ_ALERT_LOG_FILE
+    - DAQ_ALERT_PID_FILE
+    - DAQ_ALERT_TTS_ENABLED
+    - DAQ_ALERT_TTS_BACKEND
+    - DAQ_ALERT_TTS_RATE
+    - DAQ_ALERT_TTS_VOLUME
+    - DAQ_ALERT_TTS_VOICE
+    - DAQ_ALERT_TTS_ENGINE
+    - DAQ_ALERT_TTS_TEMPLATE_FILE
+    - DAQ_ALERT_TTS_AWS_VOICE
+    - DAQ_ALERT_TTS_AWS_ENGINE
+    - DAQ_ALERT_TTS_AWS_REGION
+    - DAQ_ALERT_TTS_AWS_PROFILE
+    - PYTHON
+
+interactions:
+  depends_on:
+    - package: mu2edaq-discovery
+      via: import
+      direction: out
+      optional: true
+      evidence: "src/mu2edaq_bigredbox/daq_alert.py:634"
+  depended_on_by: []
+  external: [x11, libpulse, speech-dispatcher-or-flite, aws-polly-optional]
+
+quality:
+  tests: {present: true, framework: pytest, count: 110}
+  ci: {present: false, workflows: []}
+  license: MIT
+  artifacts_clean: true
+
+findings:
+  - id: BRB-001
+    severity: S2
+    type: bug
+    title: "[tts] module-level QtMultimedia import makes libpulse a hard dependency; the listener cannot start without it even with TTS disabled"
+    issue: pending
+    fingerprint: cb1187ee
+  - id: BRB-002
+    severity: S3
+    type: bug
+    title: "[listener] SO_REUSEADDR defeats the single-instance guard on Linux; a second listener co-binds 37020"
+    issue: pending
+    fingerprint: 265cbb00
+  - id: BRB-003
+    severity: S3
+    type: bug
+    title: "[security] unauthenticated broadcast plus a global first-come rate limit lets any VLAN host suppress genuine alerts"
+    issue: pending
+    fingerprint: ccbe910b
+  - id: BRB-006
+    severity: S3
+    type: bug
+    title: "[libs] C sender silently turns an invalid address into 255.255.255.255 and caps fields at about 2 kB while Python does not"
+    issue: pending
+    fingerprint: 486a7a78
+  - id: BRB-007
+    severity: S3
+    type: enhancement
+    title: "[ci] 110 tests and no CI; two single-instance tests fail on Linux"
+    issue: pending
+    fingerprint: cdc9320c
+  - id: BRB-008
+    severity: S4
+    type: bug
+    title: "[config] TTS template path is relative to the working directory and a miss is silent"
+    issue: pending
+    fingerprint: f7f342fb
+  - id: BRB-009
+    severity: S4
+    type: documentation
+    title: "[docs] README, CLAUDE.md and man page describe single-instance and PyQt6 behaviour that is false on AlmaLinux 9"
+    issue: pending
+    fingerprint: 246c0dd0
+  - id: BRB-010
+    severity: S4
+    type: bug
+    title: "[packaging] repo-root daq_alert.py shadows the daq_alert sender package; example man pages live outside man/"
+    issue: pending
+    fingerprint: ec4b7d58
+  - id: BRB-011
+    severity: S3
+    type: bug
+    title: "[gui] alert text is rendered as Qt rich text, so a message containing <tag loses text in the window"
+    issue: pending
+    fingerprint: e15c16a7
+  - id: BRB-012
+    severity: S4
+    type: bug
+    title: "[scripts] start/stop scripts hard-code /tmp/daq_alert.pid and .log and ignore DAQ_ALERT_PID_FILE / DAQ_ALERT_LOG_FILE"
+    issue: pending
+    fingerprint: 8ef4dc99
+
+notes:
+  dedup: >
+    gh issue list (read) returned 9 issues, all closed (#1-#3 features, #8-#13
+    robustness fixes confirmed present in the code), none with a mega-review
+    fingerprint. No staged entry overlaps them.
+  staged_elsewhere: >
+    Two defects affecting this package are staged once, by other reviews, and
+    deliberately not restaged here: DISC-016 (requirements.txt:10 names
+    mu2edaq-discovery bare; in mu2edaq-discovery/doc/ISSUES-PENDING.md, routed
+    to Mu2e/mu2edaq-bigredbox, fingerprint b7cc489a) and FR-011 (the
+    file-reaper channel passes ip= instead of broadcast_ip=; in
+    mu2edaq-file-reaper/docs/ISSUES-PENDING.md). Both were verified on this
+    branch. DISC-016 is a regression: fixed in 45805cc, reintroduced by merge
+    6ed76a5, carried to main by PR #15 (c557be3). IDs BRB-004 and BRB-005 from
+    the draft are retired.
+  sender_bytes: >
+    C and C++ emit identical bytes (C++ wraps daq_alert_send); the daq_alert
+    Python library and mu2edaq-bigredbox-send emit identical bytes; C and
+    Python differ in separators and in escaping of \b, \f, DEL and non-ASCII,
+    and in size limits (C 2041 bytes per field) and bad-address handling (C
+    broadcasts, Python raises), but every sendable case decodes to the same
+    JSON object. Verified twice with a capture socket.
+  trust_model: >
+    Unauthenticated broadcast: spoofing an alert is an accepted design risk on
+    a closed DAQ network (one-call, receiver-agnostic senders in three
+    languages; a spoofed box costs a click). Suppression of genuine alerts by
+    the global first-come 100 ms rate limiter is a defect, staged as BRB-003
+    (S3); its fix needs no authentication.
+  scripts: >
+    start_daq_alert.sh and stop_daq_alert.sh are mode 120000 symlinks to the
+    start-/stop-mu2edaq-bigredbox.sh scripts, not duplicates; not filed.
+  discovery_meta: >
+    All meta values are strings (daq_alert.py:90-96), as
+    mu2edaq-discovery/doc/INTERFACES.md section 6 requires.
+  caller: >
+    mu2edaq-file-reaper is the only in-tree sender:
+    mu2edaq-file-reaper/config/mu2edaq-file-reaper.yaml:147-151 (enabled:
+    false, min_severity: critical, port 37020, no ip key) and
+    notify/channels.py:148-160.
+  man_layout: >
+    The three example-sender pages stay under libs/examples/*/ because their
+    CMakeLists.txt install them from there; moving them would change the
+    build. pyproject.toml data-files installs only the two original man1
+    pages (BRB-010).
+  completion_pass: >
+    A second agent completed this package from a terminated colleague's draft.
+    It verified the draft against the source, independently re-confirmed
+    BRB-001 (DT_NEEDED libpulse.so.0 in the PyQt6-Qt6 6.10.2 wheel), BRB-002
+    (almalinux:9 container co-bind) and BRB-006 (C sender address handling),
+    wrote the missing man pages, added BRB-011 and BRB-012, and wrote this
+    manifest. Fingerprints for BRB-001..010 are the draft's (rule_id slugs not
+    recorded); BRB-011 is
+    sha1("Mu2e/mu2edaq-bigredbox:src/mu2edaq_bigredbox/daq_alert.py:qlabel-autotext-rich-text")[:8]
+    and BRB-012 is
+    sha1("Mu2e/mu2edaq-bigredbox:start-mu2edaq-bigredbox.sh:scripts-ignore-pid-log-env")[:8].
