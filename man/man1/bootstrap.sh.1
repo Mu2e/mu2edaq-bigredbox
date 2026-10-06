@@ -1,0 +1,102 @@
+.TH BOOTSTRAP.SH 1 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.SH NAME
+bootstrap.sh \- create or update the mu2edaq\-bigredbox virtual environment
+.SH SYNOPSIS
+.B ./bootstrap.sh
+.RB [ \-\-dev ]
+.RB [ \-h | \-\-help ]
+.SH DESCRIPTION
+Creates
+.I venv/
+next to the script (if absent) with
+.BR "python3 \-m venv" ,
+upgrades
+.BR pip ,
+and installs the package editable with
+.BR "pip install \-e ." ,
+which reads
+.I pyproject.toml
+(PyQt6 and PyYAML).
+It does not read
+.IR requirements.txt .
+.PP
+If
+.B mu2edaq_discovery
+is not importable in the venv, the script installs the sibling checkout
+.I ../mu2edaq\-discovery
+editable when it exists, otherwise tries
+.B git+https://github.com/Mu2e/mu2edaq\-discovery
+and continues without discovery if that fails.
+.PP
+Paths are resolved relative to the script, so it may be run from any
+directory.
+The script runs with
+.BR "set \-euo pipefail" .
+.PP
+System libraries are not installed.
+On EL9 the listener also needs the X11 client libraries
+.RB ( libxkbcommon\-x11 ", " xcb\-util\-cursor ", " mesa\-libEGL )
+and
+.BR pulseaudio\-libs ;
+without the latter the listener cannot start (see
+.BR mu2edaq\-bigredbox (1)).
+The closing message names
+.BR start_daq_alert.sh ,
+the legacy symlink to
+.BR start\-mu2edaq\-bigredbox.sh (1).
+.SH OPTIONS
+.TP
+.B \-\-dev
+Also install the
+.B dev
+extra: pytest, pytest\-qt and build.
+.TP
+.BR \-h ", " \-\-help
+Print the script's header comment and exit.
+.SH FILES
+.TP
+.I venv/
+The virtual environment.
+.TP
+.I pyproject.toml
+Package metadata and dependencies.
+.TP
+.I ../mu2edaq\-discovery
+Optional sibling checkout.
+.SH ENVIRONMENT
+.TP
+.B PYTHON
+Interpreter used to create the venv; default
+.BR python3 .
+Must be Python 3.9 or newer.
+.SH EXIT STATUS
+.TP
+.B 0
+Success, or
+.BR \-\-help .
+.TP
+.B 1
+No interpreter or Python older than 3.9.
+A failure of the final
+.B "pip install \-e"
+of the package ends the script with pip's own status (normally 1).
+A failure installing
+.B mu2edaq\-discovery
+does not stop the script.
+.TP
+.B 2
+Unknown option.
+.SH EXAMPLES
+.RS 4
+.nf
+cd ~/mu2edaq\-main/mu2edaq\-bigredbox
+\&./bootstrap.sh
+\&./bootstrap.sh \-\-dev && QT_QPA_PLATFORM=offscreen venv/bin/pytest \-q
+PYTHON=/usr/bin/python3.11 ./bootstrap.sh
+.fi
+.RE
+.SH SEE ALSO
+.BR start\-mu2edaq\-bigredbox.sh (1),
+.BR mu2edaq\-bigredbox (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

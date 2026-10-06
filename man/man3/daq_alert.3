@@ -1,0 +1,115 @@
+.TH DAQ_ALERT 3 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.SH NAME
+daq_alert \- Python library for sending Big Red Box alerts
+.SH SYNOPSIS
+.nf
+.B from daq_alert import send_alert, AlertSender, DEFAULT_PORT, DEFAULT_BROADCAST_IP
+.PP
+.BI "send_alert(" system_id ", " message ", broadcast_ip=DEFAULT_BROADCAST_IP, port=DEFAULT_PORT) \-> None"
+.PP
+.BI "sender = AlertSender(broadcast_ip=DEFAULT_BROADCAST_IP, port=DEFAULT_PORT)"
+.BI "sender.send(" system_id ", " message ") \-> None"
+.fi
+.PP
+.B DEFAULT_PORT
+is 37020;
+.B DEFAULT_BROADCAST_IP
+is
+.BR \(dq255.255.255.255\(dq .
+.SH DESCRIPTION
+The
+.B daq_alert
+package (distribution
+.BR daq\-alert ,
+version 1.0.0, source
+.IR libs/python/daq_alert/ )
+sends one alert datagram per call:
+.PP
+.RS 4
+.nf
+json.dumps({"system_id": system_id,
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "message": message}).encode("utf\-8")
+.fi
+.RE
+.PP
+to
+.IR broadcast_ip : port
+from a fresh socket with
+.B SO_BROADCAST
+set.
+The encoding is Python's
+.B json.dumps
+default: a space after
+.B ,
+and
+.BR : ,
+non\-ASCII characters as
+.BR \euXXXX ,
+DEL as
+.BR \eu007f .
+The timestamp is local time without a zone offset, to the second.
+.PP
+.B AlertSender
+stores the address and port and calls
+.B send_alert()
+for each
+.BR send() .
+.PP
+The keyword for the destination is
+.BR broadcast_ip ,
+not
+.BR ip .
+.PP
+The listener package carries a second implementation with the same
+signature and the same bytes,
+.BR mu2edaq_bigredbox.demo_sender.send_alert ,
+whose default port is taken from
+.B CRS_PORT_UDP
+when that is set; it also prints what it sent.
+.SH ERRORS
+.TP
+.B OSError
+Socket creation or
+.B sendto
+failed, including
+.B EMSGSIZE
+for a datagram over 65507 bytes.
+.TP
+.B socket.gaierror
+.I broadcast_ip
+is neither an address nor a resolvable host name.
+.PP
+There is no length limit below the UDP maximum, unlike
+.BR libdaq_alert (3),
+which rejects fields over 2041 bytes.
+.SH NOTES
+Install with
+.B "pip install libs/python"
+or through the CMake install of
+.IR libs/ .
+.PP
+The repository root contains
+.IR daq_alert.py ,
+a launcher for the listener.
+A Python process started with the checkout root as its first path entry
+imports that file instead of this package; run sender code from elsewhere.
+.SH EXAMPLES
+.RS 4
+.nf
+from daq_alert import send_alert, AlertSender
+
+send_alert("DAQ\-NODE\-01", "Readout buffer overflow")
+
+tracker = AlertSender(broadcast_ip="192.0.2.25", port=37020)   # unicast
+tracker.send("TRK\-DTC\-03", "link down")
+.fi
+.RE
+.SH SEE ALSO
+.BR libdaq_alert (3),
+.BR libdaq_alert_cpp (3),
+.BR mu2edaq\-bigredbox\-api (7),
+.BR mu2edaq\-bigredbox\-send (1),
+.BR example\-sender\-py (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

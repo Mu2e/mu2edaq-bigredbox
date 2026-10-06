@@ -1,24 +1,26 @@
-.TH MU2EDAQ-BIGREDBOX 1 "2026-07-22" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.TH MU2EDAQ-BIGREDBOX 1 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
 .SH NAME
 mu2edaq\-bigredbox \- Mu2e DAQ critical alert listener ("Big Red Box")
 .SH SYNOPSIS
 .B mu2edaq\-bigredbox
 .br
 .B python \-m mu2edaq_bigredbox
+.br
+.B python3 daq_alert.py
+(from a checkout)
 .SH DESCRIPTION
 .B mu2edaq\-bigredbox
 listens for JSON critical\-error alerts broadcast over UDP by Mu2e DAQ
 systems and displays a prominent always\-on\-top PyQt6 alert window for
-each one.  It is normally started as a background daemon by the control
-room via
+each one, reading the alert aloud.  It is normally started as a background
+daemon by the control room via
 .BR crs-app (1)
-using the
-.B start\-mu2edaq\-bigredbox.sh
-wrapper script.
+using
+.BR start\-mu2edaq\-bigredbox.sh (1).
 .PP
 A GUI environment is required; on Linux the
 .B DISPLAY
-environment variable must be set.
+environment variable must name a display this user may open.
 .PP
 If the optional
 .B mu2edaq\-discovery
@@ -27,7 +29,149 @@ package is installed, the listener advertises itself as service
 so it appears in
 .BR mu2edaq\-discover (1)
 scans.  Its absence is not an error.
-.SH DISCOVERY RESPONSE
+.SS Payload format
+Alerts are UTF\-8 JSON datagrams on UDP port 37020:
+.PP
+.RS 4
+.nf
+{"system_id": "DAQ\-NODE\-01",
+ "timestamp": "2026\-07\-22T09:15:00",
+ "message": "Readout buffer overflow"}
+.fi
+.RE
+.PP
+All keys are optional and displayed verbatim; a missing key is shown as
+.B UNKNOWN
+or
+.BR "(no message text)" .
+Any JSON object raises an alert.
+.PP
+The value labels use Qt's automatic text format.
+A message that Qt judges to be HTML, for example one containing
+.B <
+followed by a tag name such as
+.BR b ,
+.B p
+or
+.BR font ,
+is rendered as rich text, and the text between the angle brackets is not
+shown:
+.B "rate < b and c > d"
+is displayed as
+.BR "rate d" .
+The spoken text is not affected.
+Non\-JSON datagrams and JSON values that are not objects are logged and
+ignored.
+The format is unversioned and unauthenticated; see
+.BR mu2edaq\-bigredbox\-api (7).
+.SS Alert handling
+Each accepted alert opens a window of at least 860\(mu530 pixels, centred and
+kept on top.  At most two windows are open at once; further alerts replace
+the text of the newest window and are added to its history (click
+.B Errors Received
+to see it).  Alerts arriving less than 100 ms after the previously accepted
+one are dropped and logged; this limit is global, not per sender.
+.SS Pausing alerts
+Each alert window carries a
+.B Pause
+checkbox.  While it is ticked the application stops processing incoming alerts
+altogether: no new windows open and no open window is updated.  Suppressed
+alerts are dropped, not queued, and each one is recorded in the log.
+.PP
+Pause is global rather than per\-window \(em ticking it on one window
+suppresses alerts for all of them.  Processing resumes as soon as no open
+window has it ticked, either by unticking it or by closing that window.
+There is no timeout.
+.SS Text\-to\-speech
+Each alert is read aloud when it is accepted (that is, after the pause and
+rate\-limit checks), using a template selected by the alert's
+.B system_id
+(see
+.BR DAQ_ALERT_TTS_TEMPLATE_FILE
+and
+.BR tts_templates.yaml (5)).
+Two interchangeable backends are available, selected by
+.BR DAQ_ALERT_TTS_BACKEND :
+.TP
+.I qt
+(default) \(em the local Qt
+.B QTextToSpeech
+plugin.  Rate, volume, voice and plugin selection are configured via
+.BR DAQ_ALERT_TTS_RATE ", " DAQ_ALERT_TTS_VOLUME ", " DAQ_ALERT_TTS_VOICE ", and " DAQ_ALERT_TTS_ENGINE .
+On Linux it needs
+.B speech\-dispatcher
+or
+.BR flite .
+.TP
+.I aws
+\(em AWS Polly, synthesized over the network and played back through
+QtMultimedia.  Requires the
+.I aws
+extra
+.RB ( "pip install .[aws]" )
+and AWS credentials resolvable via boto3's default chain (environment,
+.IR ~/.aws/credentials ,
+or an IAM role).  Voice and engine tier are configured via
+.BR DAQ_ALERT_TTS_AWS_VOICE " and " DAQ_ALERT_TTS_AWS_ENGINE ;
+.B DAQ_ALERT_TTS_RATE / _VOLUME / _VOICE / _ENGINE
+are Qt\-specific and not used by this backend.
+.PP
+Switching backends is a restart\-time configuration choice, not a live
+toggle.
+There is no fallback from one backend to the other.
+.PP
+Once the program has started, speech is best\-effort for either backend: a
+missing or broken speech plugin, unset or invalid AWS credentials, network
+trouble reaching Polly, an unrecognized engine or voice name, or a missing or
+malformed template file all degrade to silence (or the built\-in default
+template) with a warning, and never stop the alert window from opening.  The
+.I qt
+backend disables itself for the rest of the run after an engine error; the
+.I aws
+backend retries on the next alert.
+.PP
+.B Caveat:
+the Qt multimedia and speech modules are imported unconditionally at
+startup.  On Linux they need
+.I libpulse.so.0
+(package
+.B pulseaudio\-libs
+on EL9).  Without it the program exits with an
+.B ImportError
+before opening any window, even when
+.B DAQ_ALERT_TTS_ENABLED
+is false.
+.PP
+Each alert window also carries a
+.B Mute Audio
+checkbox, independent of
+.BR Pause :
+while ticked it silences speech only \(em the alert window still opens and
+updates normally.  Like Pause, it is global rather than per\-window.
+.SS Single instance
+The UDP port is bound before the PID file is written, and the program exits
+with status 3 if the bind fails.
+.PP
+On Linux the bind does not fail when another copy of this program holds the
+port, because both set
+.BR SO_REUSEADDR ;
+a second listener starts normally, both receive every broadcast, and only the
+newer one receives unicast alerts.  The start script's port probe has the same
+blind spot.  Check with
+.B "ss \-ulpn 'sport = :37020'"
+before starting a listener by hand.  On macOS the second instance exits with
+status 3.
+.PP
+.BR stop\-mu2edaq\-bigredbox.sh (1)
+falls back to the process holding the UDP port when the PID file is missing,
+so a listener started by hand can still be stopped.
+.SS Security
+There is no authentication.  Any host that can send a UDP datagram to the
+listener's port can raise an alert window and have arbitrary text spoken, and
+a sender emitting more than ten datagrams per second suppresses alerts from
+all other senders through the global rate limit.  The design assumes a closed
+DAQ network.
+.SS Discovery response
 In reply to a DISCOVER request the listener announces its package version in
 the
 .B version
@@ -51,16 +195,26 @@ Query it with:
 mu2edaq\-discover \-\-filter app=bigredbox \-\-json
 .fi
 .RE
-.SH PAYLOAD FORMAT
-Alerts are UTF\-8 JSON datagrams:
-.PP
-.RS 4
-.nf
-{"system_id": "DAQ\-NODE\-01",
- "timestamp": "2026\-07\-22T09:15:00",
- "message": "Readout buffer overflow"}
-.fi
-.RE
+.SS Signals
+.B SIGTERM
+and
+.B SIGINT
+stop the UDP listener, the discovery responder and speech, remove the PID
+file and exit cleanly.
+.SH OPTIONS
+None.  All configuration is through the environment (see
+.BR ENVIRONMENT ).
+.SH FILES
+.TP
+.I /tmp/daq_alert.pid
+PID file written after the port is bound and removed on clean shutdown.
+.TP
+.I /tmp/daq_alert.log
+Application log.  Every received datagram is logged.  Not rotated.
+.TP
+.I config/tts_templates.yaml
+Spoken\-text templates, relative to the current directory; see
+.BR tts_templates.yaml (5).
 .SH ENVIRONMENT
 .TP
 .B CRS_PORT_UDP
@@ -90,6 +244,11 @@ can still find it by port.
 .B DISPLAY
 X11 display to open alert windows on.  Required on Linux.
 .TP
+.B QT_QPA_PLATFORM
+Qt platform plugin.
+.I offscreen
+runs without a display (used by the tests; windows are invisible).
+.TP
 .B DAQ_ALERT_TTS_ENABLED
 Whether alerts are read aloud.  Accepts 1/0, true/false, yes/no, on/off
 (case\-insensitive).  Defaults to
@@ -109,9 +268,7 @@ extra \(em
 .B "pip install .[aws]"
 \(em and network access).  Defaults to
 .IR qt .
-An unrecognized value is ignored with a warning and the default is used.  See
-.B TEXT\-TO\-SPEECH
-below.
+An unrecognized value is ignored with a warning and the default is used.
 .TP
 .B DAQ_ALERT_TTS_RATE
 Speech rate, in Qt's
@@ -147,9 +304,10 @@ Path to a YAML file mapping
 .B system_id
 glob patterns to spoken\-text templates.  Defaults to
 .IR config/tts_templates.yaml ,
-resolved relative to the current directory.  A missing, unreadable, or
-malformed file is ignored with a warning; the listener falls back to its
-built\-in default template.  Shared by both TTS backends.
+resolved relative to the current directory.  A missing file is ignored
+silently; an unreadable or malformed one is ignored with a warning.  In both
+cases the listener falls back to its built\-in default template.  Shared by
+both TTS backends.
 .TP
 .B DAQ_ALERT_TTS_AWS_VOICE
 AWS Polly voice ID (for example
@@ -180,99 +338,27 @@ Named AWS profile (from
 or
 .IR ~/.aws/config )
 to use for the Polly client.  Unset uses boto3's default credential chain.
-.SH FILES
-.TP
-.I /tmp/daq_alert.pid
-PID file written at startup and removed on clean shutdown.
-.TP
-.I /tmp/daq_alert.log
-Application log.
-.SH SIGNALS
-.TP
-.B SIGTERM ", " SIGINT
-Stop the UDP listener, remove the PID file and exit cleanly.
 .SH EXIT STATUS
 .TP
 .B 0
 Clean shutdown (the Qt event loop's exit code).
 .TP
+.B 1
+Python exception at startup, for example a missing shared library such as
+.IR libpulse.so.0 .
+.TP
 .B 3
-The UDP port is already in use, meaning another listener is running.  The
-program refuses to start a second instance and exits immediately.
-.SH PAUSING ALERTS
-Each alert window carries a
-.B Pause
-checkbox.  While it is ticked the application stops processing incoming alerts
-altogether: no new windows open and no open window is updated.  Suppressed
-alerts are dropped, not queued, and each one is recorded in the log.
-.PP
-Pause is global rather than per\-window \(em ticking it on one window
-suppresses alerts for all of them.  Processing resumes as soon as no open
-window has it ticked, either by unticking it or by closing that window.
-.SH TEXT-TO-SPEECH
-Each alert is read aloud when it is accepted (that is, after the pause and
-rate\-limit checks), using a template selected by the alert's
-.B system_id
+The UDP port could not be bound, meaning another process holds it.  On Linux
+this is not reported when the holder is another
+.B mu2edaq\-bigredbox
 (see
-.BR DAQ_ALERT_TTS_TEMPLATE_FILE ).
-Two interchangeable backends are available, selected by
-.BR DAQ_ALERT_TTS_BACKEND :
+.BR "Single instance" ).
 .TP
-.I qt
-(default) \(em the local Qt
-.B QTextToSpeech
-plugin.  Rate, volume, voice and plugin selection are configured via
-.BR DAQ_ALERT_TTS_RATE ", " DAQ_ALERT_TTS_VOLUME ", " DAQ_ALERT_TTS_VOICE ", and " DAQ_ALERT_TTS_ENGINE .
-.TP
-.I aws
-\(em AWS Polly, synthesized over the network and played back through
-QtMultimedia.  Requires the
-.I aws
-extra
-.RB ( "pip install .[aws]" )
-and AWS credentials resolvable via boto3's default chain (environment,
-.IR ~/.aws/credentials ,
-or an IAM role).  Voice and engine tier are configured via
-.BR DAQ_ALERT_TTS_AWS_VOICE " and " DAQ_ALERT_TTS_AWS_ENGINE ;
-.B DAQ_ALERT_TTS_RATE / _VOLUME / _VOICE / _ENGINE
-are Qt\-specific and not used by this backend.
-.PP
-Switching backends is a restart\-time configuration choice, not a live
-toggle \(em there is no in\-app control for it, only
-.BR DAQ_ALERT_TTS_BACKEND .
-The two are meant to be compared by running the listener once per backend
-against the same alert.
-.PP
-Speech is best\-effort for either backend: a missing/broken local speech
-plugin, unset/invalid AWS credentials, network trouble reaching Polly, an
-unrecognized engine or voice name, or a missing/malformed template file all
-degrade to silence (or the built\-in default template) with a warning in the
-log, and never stop the listener from starting or the alert window from
-opening.  The two backends differ in how they treat a failed attempt to
-speak one specific alert: the
-.I qt
-backend disables itself for the rest of the run (a broken local engine is not
-expected to recover), while the
-.I aws
-backend logs the failure and tries again on the next alert (network/AWS
-errors are often transient).
-.PP
-Each alert window also carries a
-.B Mute Audio
-checkbox, independent of
-.BR Pause :
-while ticked it silences speech only \(em the alert window still opens and
-updates normally.  Like Pause, it is global rather than per\-window, and
-resumes as soon as no open window has it ticked.
-.SH SINGLE INSTANCE
-Only one listener may own the UDP port at a time.  The port is bound before
-the PID file is written, so the binding \(em not the PID file \(em is what
-decides which process is the live listener.  A second invocation exits with
-status 3 rather than running on with a dead listener thread.
-.PP
-.B stop\-mu2edaq\-bigredbox.sh
-falls back to the process holding the UDP port when the PID file is missing,
-so a listener started by hand can still be stopped.
+.B 134
+Qt could not open a display (no
+.BR DISPLAY ,
+no X server, or no permission) and aborted.  This happens before the port is
+bound.
 .SH EXAMPLES
 Run in the foreground:
 .PP
@@ -289,7 +375,21 @@ Listen on a non\-default port:
 CRS_PORT_UDP=37030 mu2edaq\-bigredbox
 .fi
 .RE
+.PP
+Run without speech, logging to a private file:
+.PP
+.RS 4
+.nf
+DAQ_ALERT_TTS_ENABLED=0 DAQ_ALERT_LOG_FILE=~/daq_alert.log mu2edaq\-bigredbox
+.fi
+.RE
 .SH SEE ALSO
-.BR mu2edaq\-bigredbox\-send (1)
+.BR mu2edaq\-bigredbox\-send (1),
+.BR start\-mu2edaq\-bigredbox.sh (1),
+.BR stop\-mu2edaq\-bigredbox.sh (1),
+.BR tts_templates.yaml (5),
+.BR mu2edaq\-bigredbox\-api (7),
+.BR libdaq_alert (3),
+.BR daq_alert (3)
 .SH AUTHOR
 Mu2e DAQ Group, Fermi National Accelerator Laboratory.

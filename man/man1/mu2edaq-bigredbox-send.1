@@ -1,4 +1,4 @@
-.TH MU2EDAQ-BIGREDBOX-SEND 1 "2026-07-22" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.TH MU2EDAQ-BIGREDBOX-SEND 1 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
 .SH NAME
 mu2edaq\-bigredbox\-send \- send a test DAQ critical\-error broadcast
 .SH SYNOPSIS
@@ -7,11 +7,29 @@ mu2edaq\-bigredbox\-send \- send a test DAQ critical\-error broadcast
 [\fB\-\-message\fR \fITEXT\fR]
 [\fB\-\-ip\fR \fIADDR\fR]
 [\fB\-\-port\fR \fIPORT\fR]
+.br
+.B python3 demo_sender.py
+[\fIoptions\fR]
+(from a checkout)
 .SH DESCRIPTION
 Broadcasts a single JSON alert datagram in the format expected by
 .BR mu2edaq\-bigredbox (1).
 It is a diagnostic utility for verifying that the listener is running and
 that broadcast traffic reaches it.
+It prints the address, port and payload fields it sent.
+.PP
+The payload is
+.B json.dumps
+of
+.BR system_id ,
+.B timestamp
+(local time, seconds, no zone) and
+.BR message ,
+byte\-identical to
+.BR daq_alert (3).
+.B demo_sender.py
+in the repository root runs the same code from a checkout without
+installing the package.
 .SH OPTIONS
 .TP
 .BR \-\-system\-id " " \fIID\fR
@@ -22,8 +40,10 @@ System identifier included in the alert.  Default:
 Alert message text.  Default: a generic critical pipeline error.
 .TP
 .BR \-\-ip " " \fIADDR\fR
-Destination broadcast address.  Default:
-.BR 255.255.255.255 .
+Destination address: a broadcast address, a unicast address, or a host name.
+Default:
+.BR 255.255.255.255 ,
+which does not leave the local segment.
 .TP
 .BR \-\-port " " \fIPORT\fR
 Destination UDP port.  Defaults to
@@ -39,7 +59,16 @@ Default UDP port when
 .B \-\-port
 is not given.
 .SH EXIT STATUS
-0 on success; non\-zero if the datagram could not be sent.
+.TP
+.B 0
+The datagram was sent.
+.TP
+.B 1
+The datagram could not be sent, or the address did not resolve (Python
+traceback).
+.TP
+.B 2
+Invalid command\-line arguments.
 .SH EXAMPLES
 .RS 4
 .nf
@@ -49,6 +78,8 @@ mu2edaq\-bigredbox\-send \-\-ip 192.168.1.255 \-\-port 37020
 .fi
 .RE
 .SH SEE ALSO
-.BR mu2edaq\-bigredbox (1)
+.BR mu2edaq\-bigredbox (1),
+.BR daq_alert (3),
+.BR mu2edaq\-bigredbox\-api (7)
 .SH AUTHOR
 Mu2e DAQ Group, Fermi National Accelerator Laboratory.

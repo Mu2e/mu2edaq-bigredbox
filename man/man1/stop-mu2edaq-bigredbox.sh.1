@@ -1,0 +1,80 @@
+.TH STOP-MU2EDAQ-BIGREDBOX.SH 1 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.SH NAME
+stop\-mu2edaq\-bigredbox.sh, stop_daq_alert.sh \- stop the Big Red Box alert listener
+.SH SYNOPSIS
+.B stop\-mu2edaq\-bigredbox.sh
+.RI [ pid_file ]
+.br
+.B stop_daq_alert.sh
+.RI [ pid_file ]
+.SH DESCRIPTION
+Control\-room stop script, run as
+.BR "crs\-app stop bigredbox" .
+.B stop_daq_alert.sh
+is a git symbolic link to this script.
+.PP
+The PID is read from
+.IR pid_file .
+If that file does not exist, the script asks
+.BR lsof (8)
+for the processes holding UDP port
+.B CRS_PORT_UDP
+and takes the first whose command line matches
+.B mu2edaq[\-_]bigredbox
+or
+.BR daq_alert ,
+so a listener started by hand, or one whose PID file was removed, can still be
+stopped; an unrelated port holder is never signalled.
+It then sends
+.BR SIGTERM ,
+waits up to
+.B CRS_STOP_TIMEOUT
+seconds, sends
+.B SIGKILL
+if the process is still alive, and removes the PID file.
+.PP
+On Linux two listeners can hold the port at once (see
+.BR mu2edaq\-bigredbox (1),
+.BR "Single instance" );
+the PID file then names only the newer one, and only that one is stopped.
+.SH OPTIONS
+.TP
+.I pid_file
+PID file to read.
+Default
+.IR /tmp/daq_alert.pid .
+.SH FILES
+.TP
+.I /tmp/daq_alert.pid
+Default PID file, written by the listener.
+.SH ENVIRONMENT
+.TP
+.B CRS_PORT_UDP
+Port used for the
+.BR lsof (8)
+fallback; default 37020.
+.TP
+.B CRS_STOP_TIMEOUT
+Seconds to wait after
+.B SIGTERM
+before
+.BR SIGKILL ;
+default 10.
+.SH EXIT STATUS
+.TP
+.B 0
+Stopped, or not running (no PID file and no matching port holder, or a stale
+PID).
+.SH EXAMPLES
+.RS 4
+.nf
+\&./stop\-mu2edaq\-bigredbox.sh
+\&./stop\-mu2edaq\-bigredbox.sh ~/daq_alert.pid
+ss \-ulpn 'sport = :37020'      # Linux: confirm nothing is left
+.fi
+.RE
+.SH SEE ALSO
+.BR start\-mu2edaq\-bigredbox.sh (1),
+.BR mu2edaq\-bigredbox (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

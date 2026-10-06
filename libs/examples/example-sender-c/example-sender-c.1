@@ -1,4 +1,4 @@
-.TH EXAMPLE\-SENDER\-C 1 "May 2026" "mu2e\-daq\-alert 1.0.0" "User Commands"
+.TH EXAMPLE\-SENDER\-C 1 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
 .SH NAME
 example\-sender\-c \- send a Mu2e DAQ alert using the C library
 .SH SYNOPSIS
@@ -37,9 +37,13 @@ Human\-readable alert message.
 Default: \fBTest alert from example\-sender\-c\fR
 .TP
 .BR \-i ", " \-\-ip " " \fIADDRESS\fR
-UDP broadcast destination address.
+UDP destination address: a dotted\-quad IPv4 broadcast or unicast address.
 .br
 Default: \fB255.255.255.255\fR
+.br
+Anything that is not a dotted quad, including a host name, is silently sent
+to 255.255.255.255 and reported as success (see
+.BR libdaq_alert (3)).
 .TP
 .BR \-p ", " \-\-port " " \fINUM\fR
 UDP destination port (1\(en65535).
@@ -48,6 +52,17 @@ Default: \fB37020\fR
 .TP
 .BR \-h ", " \-\-help
 Print a usage summary and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Alert sent successfully.
+.TP
+.B 1
+Invalid port, unknown option, field longer than 2041 bytes, or a socket
+error.
+An unparseable
+.B \-\-ip
+is not detected.
 .SH EXAMPLES
 Send an alert with default parameters:
 .PP
@@ -66,13 +81,6 @@ example\-sender\-c \-\-system\-id DAQ\-NODE\-03 \e
     \-\-ip 192.168.1.255
 .fi
 .RE
-.SH EXIT STATUS
-.TP
-.B 0
-Alert sent successfully.
-.TP
-.B 1
-Invalid argument or send failure.
 .SH BUILDING
 Build and install from the
 .I libs/
@@ -89,5 +97,10 @@ cmake \-\-install build
 The installed binary is placed in
 .IR <prefix>/bin/example\-sender\-c .
 .SH SEE ALSO
+.BR libdaq_alert (3),
+.BR mu2edaq\-bigredbox (1),
+.BR mu2edaq\-bigredbox\-api (7),
 .BR example\-sender\-cpp (1),
 .BR example\-sender\-py (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

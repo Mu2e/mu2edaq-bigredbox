@@ -1,0 +1,96 @@
+.TH LIBDAQ_ALERT_CPP 3 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.SH NAME
+libdaq_alert_cpp, mu2e::daq::AlertSender \- C++ library for sending Big Red Box alerts
+.SH SYNOPSIS
+.nf
+.B #include <daq_alert.hpp>
+.PP
+.B namespace mu2e { namespace daq {
+.PP
+.B class AlertError : public std::runtime_error { ... };
+.PP
+.B class AlertSender {
+.B public:
+.BI "    explicit AlertSender(std::string " broadcast_ip " = \(dq255.255.255.255\(dq,"
+.BI "                         uint16_t " port " = 37020);"
+.BI "    void send(const std::string &" system_id ,
+.BI "              const std::string &" message ") const;"
+.BI "    static void send_once(const std::string &" system_id ,
+.BI "                          const std::string &" message ,
+.BI "                          const std::string &" broadcast_ip " = \(dq255.255.255.255\(dq,"
+.BI "                          uint16_t " port " = 37020);"
+.B "    const std::string &broadcast_ip() const;"
+.B "    uint16_t           port() const;"
+.B };
+.PP
+.B }}
+.fi
+.PP
+Link with
+.B \-ldaq_alert_cpp \-ldaq_alert
+(CMake target
+.BR daq_alert_cpp ,
+which links
+.B daq_alert_c
+publicly).
+C++17.
+.SH DESCRIPTION
+.B AlertSender
+stores a destination address and port.
+.B send()
+calls
+.BR daq_alert_send (3)
+with them and throws
+.B AlertError
+carrying
+.BR daq_alert_strerror (3)
+text on any non\-zero result.
+.B send_once()
+constructs a temporary sender and sends one alert.
+.PP
+Every call goes through the C library, so the datagram bytes, the
+timestamp format, the field size limit and the address handling are exactly
+those of
+.BR libdaq_alert (3).
+Strings containing an embedded NUL are truncated at the NUL by
+.BR c_str() .
+.PP
+The object has no mutable state after construction; a const instance may be
+shared between threads.
+.SH ERRORS
+.TP
+.B mu2e::daq::AlertError
+Socket creation or
+.BR sendto (2)
+failed, or a field was too long
+.RB ( DAQ_ALERT_ERR_FORMAT ).
+.PP
+An address that is not a dotted quad does
+.B not
+throw: it is sent as a limited broadcast (see
+.BR libdaq_alert (3),
+.BR NOTES ).
+.SH EXAMPLES
+.RS 4
+.nf
+#include <daq_alert.hpp>
+#include <iostream>
+
+void on_fatal(const std::string &what)
+{
+    static const mu2e::daq::AlertSender sender;   // 255.255.255.255:37020
+    try {
+        sender.send("DAQ\-NODE\-01", what);
+    } catch (const mu2e::daq::AlertError &e) {
+        std::cerr << "alert failed: " << e.what() << '\en';
+    }
+}
+.fi
+.RE
+.SH SEE ALSO
+.BR libdaq_alert (3),
+.BR daq_alert (3),
+.BR mu2edaq\-bigredbox\-api (7),
+.BR example\-sender\-cpp (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

@@ -1,4 +1,4 @@
-.TH EXAMPLE\-SENDER\-PY 1 "May 2026" "mu2e\-daq\-alert 1.0.0" "User Commands"
+.TH EXAMPLE\-SENDER\-PY 1 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
 .SH NAME
 example\-sender\-py \- send a Mu2e DAQ alert using the Python library
 .SH SYNOPSIS
@@ -46,7 +46,7 @@ Human\-readable alert message.
 Default: \fBTest alert from example\-sender\-py\fR
 .TP
 .BR \-i ", " \-\-ip " " \fIADDRESS\fR
-UDP broadcast destination address.
+UDP destination: a broadcast or unicast IPv4 address, or a host name.
 .br
 Default: \fB255.255.255.255\fR
 .TP
@@ -57,6 +57,20 @@ Default: \fB37020\fR
 .TP
 .BR \-h ", " \-\-help
 Print a usage summary and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Alert sent successfully.
+.TP
+.B 1
+The
+.B daq_alert
+package is not importable, or the send failed (Python traceback, for
+example an unresolvable
+.BR \-\-ip ).
+.TP
+.B 2
+Invalid arguments, including a port outside 1\(en65535.
 .SH EXAMPLES
 Send an alert with default parameters:
 .PP
@@ -75,13 +89,6 @@ example\-sender\-py \-\-system\-id DAQ\-NODE\-03 \e
     \-\-ip 192.168.1.255
 .fi
 .RE
-.SH EXIT STATUS
-.TP
-.B 0
-Alert sent successfully.
-.TP
-.B 1
-Invalid argument, missing dependency, or send failure.
 .SH INSTALLATION
 Install the required
 .B daq_alert
@@ -100,7 +107,7 @@ install via the CMake install target:
 .nf
 cmake \-B build \e
     \-DDAQ_ALERT_PYTHON_INSTALL_DIR="$(python3 \-c \e
-        'import sysconfig; print(sysconfig.get_path(\"purelib\"))')"
+        'import sysconfig; print(sysconfig.get_path("purelib"))')"
 cmake \-\-install build
 .fi
 .RE
@@ -120,5 +127,10 @@ cmake \-\-install build
 The installed script is placed in
 .IR <prefix>/bin/example\-sender\-py .
 .SH SEE ALSO
+.BR daq_alert (3),
+.BR mu2edaq\-bigredbox (1),
+.BR mu2edaq\-bigredbox\-api (7),
 .BR example\-sender\-c (1),
 .BR example\-sender\-cpp (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

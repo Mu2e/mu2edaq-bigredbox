@@ -1,0 +1,111 @@
+.TH TTS_TEMPLATES.YAML 5 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.SH NAME
+tts_templates.yaml \- spoken\-text templates for Big Red Box alerts
+.SH SYNOPSIS
+.I config/tts_templates.yaml
+.SH DESCRIPTION
+A YAML mapping from
+.B system_id
+patterns to the sentence that
+.BR mu2edaq\-bigredbox (1)
+speaks when it accepts an alert.
+It is read once at startup from
+.BR DAQ_ALERT_TTS_TEMPLATE_FILE ,
+default
+.IR config/tts_templates.yaml ,
+resolved relative to the listener's current directory.
+.BR start\-mu2edaq\-bigredbox.sh (1)
+changes to the checkout first, so there it resolves to the shipped file.
+.PP
+Keys are
+.BR fnmatch (3)\-style
+glob patterns
+.RB ( * ,
+.BR ? ,
+.BR [...] )
+matched against the alert's
+.BR system_id ,
+in file order; the first match wins.
+Matching is case\-sensitive on Linux and macOS and case\-insensitive on
+Windows (Python
+.B fnmatch.fnmatch
+normalises case with
+.BR os.path.normcase ).
+The key
+.B default
+is used when no pattern matches.
+.PP
+Values are Python
+.B str.format
+templates with three fields:
+.TP
+.B {system_id}
+.TP
+.B {timestamp}
+the sender's timestamp string, verbatim
+.TP
+.B {message}
+.PP
+A missing payload field is rendered as
+.BR UNKNOWN ,
+or
+.B (no message text)
+for
+.BR message .
+.SH FALLBACKS
+The built\-in template
+.B "Critical error on {system_id}. {message}"
+is used when:
+.IP \(bu 2
+the file does not exist (silently, with no log line);
+.IP \(bu 2
+the file cannot be read, does not parse, or is not a mapping (a warning is
+logged);
+.IP \(bu 2
+no pattern matches and there is no
+.B default
+key;
+.IP \(bu 2
+the chosen template names an unknown field or is malformed (a warning is
+logged and the built\-in template is used for that alert).
+.PP
+Entries whose key or value is not a string are skipped with a warning.
+The templates are shared by both speech backends
+.RB ( qt " and " aws ).
+.SH FILES
+.TP
+.I config/tts_templates.yaml
+The shipped file, with patterns for
+.BR Run\-Contr* ,
+.BR *Crash* ,
+.BR DAQ\-NODE\-* ,
+.B CFO*
+and
+.BR ROC* .
+It is not included in the Python wheel.
+.SH ENVIRONMENT
+.TP
+.B DAQ_ALERT_TTS_TEMPLATE_FILE
+Path of the template file.
+.SH EXAMPLES
+.RS 4
+.nf
+default: "Critical error on {system_id}. {message}"
+"Run\-Contr*": "Run Control Error.  {message}"
+"DAQ\-NODE\-*": "Attention. Node {system_id} reports a critical error. {message}"
+"CFO*": "C. F. O. {system_id} has a critical error. {message}"
+.fi
+.RE
+.PP
+Quote keys that start with
+.B *
+or contain
+.BR : ;
+an unquoted leading
+.B *
+is a YAML alias.
+.SH SEE ALSO
+.BR mu2edaq\-bigredbox (1),
+.BR mu2edaq\-bigredbox\-api (7)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

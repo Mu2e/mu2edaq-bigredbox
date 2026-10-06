@@ -1,0 +1,173 @@
+.TH LIBDAQ_ALERT 3 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.SH NAME
+libdaq_alert, daq_alert_send, daq_alert_strerror \- C library for sending Big Red Box alerts
+.SH SYNOPSIS
+.nf
+.B #include <daq_alert.h>
+.PP
+.B #define DAQ_ALERT_PORT 37020
+.B #define DAQ_ALERT_BROADCAST_IP \(dq255.255.255.255\(dq
+.PP
+.B typedef enum {
+.B "    DAQ_ALERT_OK         =  0,"
+.B "    DAQ_ALERT_ERR_SOCKET = \-1,"
+.B "    DAQ_ALERT_ERR_SEND   = \-2,"
+.B "    DAQ_ALERT_ERR_FORMAT = \-3"
+.B } DaqAlertResult;
+.PP
+.BI "DaqAlertResult daq_alert_send(const char *" system_id ,
+.BI "                              const char *" message ,
+.BI "                              const char *" broadcast_ip ,
+.BI "                              uint16_t " port );
+.PP
+.BI "const char *daq_alert_strerror(DaqAlertResult " result );
+.fi
+.PP
+Link with
+.B \-ldaq_alert
+(static archive
+.IR libdaq_alert.a ,
+CMake target
+.BR daq_alert_c );
+on Windows also
+.BR ws2_32 .
+.SH DESCRIPTION
+.B daq_alert_send()
+builds the alert datagram
+.PP
+.RS 4
+.nf
+{"system_id":"\fIsystem_id\fR","timestamp":"\fIYYYY\-MM\-DDTHH:MM:SS\fR","message":"\fImessage\fR"}
+.fi
+.RE
+.PP
+and sends it as one UDP datagram to
+.IR broadcast_ip : port
+with
+.B SO_BROADCAST
+set, on a socket created and closed within the call.
+A NULL or empty
+.I broadcast_ip
+means
+.BR DAQ_ALERT_BROADCAST_IP ;
+a
+.I port
+of 0 means
+.BR DAQ_ALERT_PORT .
+The timestamp is the sender's local time with no zone offset, to the second.
+.PP
+.I system_id
+and
+.I message
+are escaped for JSON:
+.BR \e" ,
+.BR \e\e ,
+.BR \en ,
+.BR \er ,
+.B \et
+as short escapes, every other byte below 0x20 (including backspace and form
+feed) as
+.BR \eu00XX ,
+and all other bytes, including DEL and UTF\-8 sequences, copied unchanged.
+Invalid UTF\-8 is passed through, and the listener then discards the datagram
+as undecodable.
+.PP
+.B daq_alert_strerror()
+returns a static string describing
+.IR result .
+.PP
+The C++ binding
+.BR libdaq_alert_cpp (3)
+and the Python binding
+.BR daq_alert (3)
+produce datagrams that decode to the same JSON object; the bytes differ (see
+.BR mu2edaq\-bigredbox\-api (7)).
+.SH RETURN VALUE
+.TP
+.B DAQ_ALERT_OK
+The datagram was handed to the kernel.
+UDP gives no delivery guarantee.
+.TP
+.B DAQ_ALERT_ERR_SOCKET
+.BR socket (2)
+failed.
+.TP
+.B DAQ_ALERT_ERR_SEND
+.BR sendto (2)
+failed.
+.TP
+.B DAQ_ALERT_ERR_FORMAT
+A field exceeded the escape buffer, or the whole payload exceeded 4095 bytes.
+Nothing is sent.
+.SH NOTES
+.TP
+.B Address parsing
+.I broadcast_ip
+is converted with
+.BR inet_addr (3).
+A string it cannot parse, including any host name, yields
+.BR INADDR_NONE ,
+which is 255.255.255.255: the alert is sent as a local limited broadcast and
+the call returns
+.BR DAQ_ALERT_OK .
+Pass a dotted\-quad address only, and check it yourself.
+.TP
+.B Size limits
+Each of
+.I system_id
+and
+.I message
+may be at most 2041 bytes after escaping; the Python binding has no such
+limit.
+Keep messages short: the text is shown in a window and read aloud in full.
+.TP
+.B NULL arguments
+.I system_id
+and
+.I message
+must not be NULL; they are dereferenced without a check.
+.TP
+.B Threads
+The function keeps no state and may be called from several threads.
+.TP
+.B Reach
+The default destination is the limited broadcast address, which never
+crosses a router.
+To reach a listener on another subnet, send to that host's unicast address.
+.PP
+Version 1.0.0 of the sender libraries
+.RI ( libs/CMakeLists.txt ),
+shipped with mu2edaq\-bigredbox 2.0.0.
+.SH EXAMPLES
+.RS 4
+.nf
+#include <stdio.h>
+#include <daq_alert.h>
+
+int report(const char *what)
+{
+    DaqAlertResult rc = daq_alert_send("DAQ\-NODE\-01", what, NULL, 0);
+    if (rc != DAQ_ALERT_OK)
+        fprintf(stderr, "alert failed: %s\en", daq_alert_strerror(rc));
+    return rc;
+}
+.fi
+.RE
+.PP
+Build and install from the repository:
+.PP
+.RS 4
+.nf
+cmake \-S libs \-B libs/build && cmake \-\-build libs/build \-j
+cmake \-\-install libs/build \-\-prefix /opt/mu2edaq
+cc \-I/opt/mu2edaq/include app.c /opt/mu2edaq/lib/libdaq_alert.a
+.fi
+.RE
+.SH SEE ALSO
+.BR libdaq_alert_cpp (3),
+.BR daq_alert (3),
+.BR mu2edaq\-bigredbox\-api (7),
+.BR mu2edaq\-bigredbox (1),
+.BR example\-sender\-c (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

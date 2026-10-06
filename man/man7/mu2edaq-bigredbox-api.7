@@ -1,0 +1,155 @@
+.TH MU2EDAQ-BIGREDBOX-API 7 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.SH NAME
+mu2edaq\-bigredbox\-api \- Big Red Box alert datagram and listener behaviour
+.SH DESCRIPTION
+.SS Transport
+An alert is one IPv4 UDP datagram to port 37020
+(listener override:
+.BR CRS_PORT_UDP ).
+The listener binds
+.B 0.0.0.0
+with
+.B SO_BROADCAST
+and
+.BR SO_REUSEADDR .
+All shipped senders default to the limited broadcast address
+.BR 255.255.255.255 ,
+which reaches every listener on the local segment and never crosses a
+router; a listener on another subnet must be sent to by unicast.
+Nothing is acknowledged.
+.SS Payload
+One UTF\-8 JSON object:
+.PP
+.RS 4
+.nf
+{"system_id": "DAQ\-NODE\-01",
+ "timestamp": "2026\-10\-06T14:17:46",
+ "message": "Readout buffer overflow"}
+.fi
+.RE
+.TP
+.B system_id
+Who is alerting.
+Displayed, and used to choose the spoken template
+.RB ( tts_templates.yaml (5)).
+.TP
+.B timestamp
+Sender's local time, no zone offset, seconds; displayed verbatim, never
+parsed.
+.TP
+.B message
+Displayed and read aloud in full.
+.PP
+All keys are optional; a missing or null key is shown as
+.B UNKNOWN
+or
+.BR "(no message text)" ;
+a non\-string value is shown as its
+.B str()
+form.
+Extra keys are ignored.
+There is no version field and no authentication: any JSON object, including
+.BR {} ,
+raises an alert.
+.PP
+The window labels use Qt's automatic text format, so text that Qt judges to be
+HTML (for example a
+.B <
+followed by a tag name such as
+.BR b ,
+.B p
+or
+.BR font )
+is rendered as rich text and part of it can disappear from the window.
+Senders should avoid
+.B <
+in
+.BR message .
+.SS Listener processing
+.IP 1. 4
+Not UTF\-8, not JSON, or JSON that is not an object: logged and dropped.
+.IP 2. 4
+Any open window has
+.B Pause
+ticked: logged and dropped, not queued.
+.IP 3. 4
+Less than 100 ms since the last accepted alert, from any sender: logged and
+dropped.
+.IP 4. 4
+Otherwise: spoken (unless
+.B Mute Audio
+is ticked) and shown in a new window, or, when two windows are already open,
+written over the newest window and appended to its history.
+.PP
+Every received datagram is logged at INFO, and every dropped one again with
+its payload, to
+.IR /tmp/daq_alert.log ,
+which is not rotated.
+.SS Bindings
+.TS
+l l l l.
+Binding	Encoding	Field limit	Bad address
+_
+C	compact, raw UTF\-8	2041 bytes	sent as broadcast
+C++	as C	as C	as C
+Python	spaced, \euXXXX	none	exception
+.TE
+.PP
+C is
+.BR libdaq_alert (3),
+C++ is
+.BR libdaq_alert_cpp (3),
+Python is
+.BR daq_alert (3).
+.PP
+All bindings put the keys in the order system_id, timestamp, message and
+produce datagrams that decode to the same object.
+The C and C++ bindings emit identical bytes; the two Python implementations
+(the
+.B daq_alert
+library and
+.BR mu2edaq\-bigredbox\-send (1))
+emit identical bytes; C and Python differ in separators, the escaping of
+backspace, form feed, DEL and non\-ASCII characters.
+Any receiver other than a JSON parser must not assume one encoding.
+.SS Service discovery
+With
+.B mu2edaq\-discovery
+installed the listener answers DISCOVER requests as
+.BR app=bigredbox ,
+.BR "name=Big Red Box Alerts" ,
+.BR scheme=udp ,
+the UDP port,
+.BR version=2.0.0 ,
+and
+.B meta
+with string values
+.BR version ,
+.BR qt ,
+.BR pyqt ,
+.B python
+and
+.BR udp_port .
+.SS Trust model
+Any host that can reach the port can raise an alert window and make the
+listener speak arbitrary text.
+A sender exceeding ten datagrams per second suppresses alerts from every
+other sender through the global rate limit.
+The design assumes a closed DAQ network.
+.SH EXAMPLES
+.RS 4
+.nf
+mu2edaq\-bigredbox\-send \-\-system\-id TEST \-\-message "test, please acknowledge"
+echo \-n '{"system_id":"TEST","message":"hi"}' | nc \-u \-w1 127.0.0.1 37020
+mu2edaq\-discover \-\-filter app=bigredbox \-\-json
+.fi
+.RE
+.SH SEE ALSO
+.BR mu2edaq\-bigredbox (1),
+.BR mu2edaq\-bigredbox\-send (1),
+.BR libdaq_alert (3),
+.BR libdaq_alert_cpp (3),
+.BR daq_alert (3),
+.BR tts_templates.yaml (5)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.

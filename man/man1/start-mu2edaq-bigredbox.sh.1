@@ -1,0 +1,116 @@
+.TH START-MU2EDAQ-BIGREDBOX.SH 1 "2026-10-06" "mu2edaq-bigredbox 2.0.0" "Mu2e DAQ Manual"
+.SH NAME
+start\-mu2edaq\-bigredbox.sh, start_daq_alert.sh \- start the Big Red Box alert listener in the background
+.SH SYNOPSIS
+.B start\-mu2edaq\-bigredbox.sh
+.br
+.B start_daq_alert.sh
+.SH DESCRIPTION
+Control\-room start script, run as
+.BR "crs\-app start bigredbox" .
+.B start_daq_alert.sh
+is a git symbolic link to this script, kept for the old name; both behave
+identically.
+.PP
+The script, in order:
+.IP 1. 4
+changes to its own directory, so that the relative default
+.I config/tts_templates.yaml
+is found;
+.IP 2. 4
+exports
+.B CRS_PORT_UDP
+(default 37020) and
+.B DISPLAY
+(default
+.BR :0 )
+if they are not already set;
+.IP 3. 4
+exits 0 with "already running" if
+.I /tmp/daq_alert.pid
+names a live process, otherwise removes the PID file;
+.IP 4. 4
+probes the UDP port by binding it from Python and exits 1 if the bind fails,
+printing the
+.BR lsof (8)
+holder when available;
+.IP 5. 4
+launches, in order of preference,
+.IR venv/bin/mu2edaq\-bigredbox ,
+.B mu2edaq\-bigredbox
+on
+.BR PATH ,
+or
+.B python3 daq_alert.py
+from the checkout, under
+.BR nohup (1)
+with standard output and error appended to
+.IR /tmp/daq_alert.log ;
+.IP 6. 4
+waits one second and exits 1, printing the last three log lines, if the
+process has already died.
+.PP
+.B Limitations.
+The port probe sets
+.BR SO_REUSEADDR ,
+so on Linux it succeeds even while another listener holds the port, and a
+second listener is started.
+The PID and log paths are fixed: the script does not honour
+.B DAQ_ALERT_PID_FILE
+or
+.BR DAQ_ALERT_LOG_FILE ,
+although the listener itself does.
+.SH OPTIONS
+None.
+.SH FILES
+.TP
+.I /tmp/daq_alert.pid
+Checked for a running listener; written by the listener, not by this script.
+.TP
+.I /tmp/daq_alert.log
+The listener's standard output and error are appended here.
+.TP
+.I venv/
+Virtual environment created by
+.BR bootstrap.sh (1).
+.SH ENVIRONMENT
+.TP
+.B CRS_PORT_UDP
+UDP port the listener binds; default 37020.
+Exported by
+.B crs\-app
+from
+.IR apps.yaml .
+.TP
+.B DISPLAY
+X11 display for the alert windows; default
+.BR :0 .
+On a host whose console session is not
+.BR :0 ,
+set it explicitly.
+.SH EXIT STATUS
+.TP
+.B 0
+The listener was started and is still alive after one second, or a listener
+named in the PID file is already running.
+.TP
+.B 1
+The port probe failed, or the listener died within one second (for example
+Qt could not open the display, or
+.I libpulse.so.0
+is missing).
+.SH EXAMPLES
+.RS 4
+.nf
+\&./start\-mu2edaq\-bigredbox.sh
+CRS_PORT_UDP=37030 DISPLAY=:1 ./start\-mu2edaq\-bigredbox.sh
+tail \-n 20 /tmp/daq_alert.log
+.fi
+.RE
+.SH SEE ALSO
+.BR mu2edaq\-bigredbox (1),
+.BR stop\-mu2edaq\-bigredbox.sh (1),
+.BR bootstrap.sh (1),
+.BR mu2edaq\-bigredbox\-send (1)
+.SH AUTHOR
+Mu2e DAQ Group, Fermi National Accelerator Laboratory.
